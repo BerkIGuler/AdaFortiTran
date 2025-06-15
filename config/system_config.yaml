@@ -1,0 +1,7 @@
+ofdm:
+  num_scs: 120
+  num_symbols: 14
+
+pilot:
+  num_scs: 12
+  num_symbols: 2
