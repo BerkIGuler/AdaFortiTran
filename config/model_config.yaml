@@ -1,0 +1,3 @@
+patch_size: [10, 4]
+num_layers: 6
+device: "cpu"
