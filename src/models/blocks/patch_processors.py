@@ -40,8 +40,8 @@ class InversePatchEmbedding(nn.Module):
 
     def __init__(
             self,
-            output_size: Tuple[int, int] = (120, 28),
-            patch_size: Tuple[int, int] = (10, 4)
+            output_size: Tuple[int, int] = (120, 14),
+            patch_size: Tuple[int, int] = (3, 2)
     ):
         """Initialize the InversePatchEmbedding layer.
 
