@@ -10,8 +10,10 @@ training loop management, evaluation, and result logging.
 import torch
 from torch import nn, optim
 from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
+from torch.utils.tensorboard.writer import SummaryWriter
 from typing import Dict, Tuple, Type, Union
+import logging
+from tqdm import tqdm
 
 from .parser import TrainingArguments
 from src.data.dataset import MatDataset, get_test_dataloaders
@@ -21,14 +23,11 @@ from src.utils import (
     get_ls_mse_per_folder,
     get_model_details,
     get_test_stats_plot,
-    get_error_images
+    get_error_images,
+    concat_complex_channel,
+    to_db
 )
-from src.main.train_helpers import (
-    get_all_test_stats,
-    train_epoch,
-    eval_model,
-    predict_channels
-)
+from src.config.schemas import SystemConfig, ModelConfig
 
 # A union type representing supported model classes
 ModelType = Union[LinearEstimator, AdaFortiTranEstimator, FortiTranEstimator]
@@ -48,16 +47,18 @@ class ModelTrainer:
     Attributes:
         MODEL_REGISTRY: Dictionary mapping model names to model classes
         system_config: OFDM system configuration
-        args: Training arguments
+        model_config: OFDM model configuration
+        args: Training arguments parsed from command line
         device: PyTorch device for computation
         writer: TensorBoard SummaryWriter for logging
-        model: Initialized model instance
+        model: Initialized Torch model instance
         optimizer: Torch optimizer for training
-        scheduler: Learning rate scheduler
+        scheduler: Learning rate scheduler for training
         early_stopper: Helper for early stopping
-        train_loader: DataLoader for training set
-        val_loader: DataLoader for validation set
-        test_loaders: Dictionary of test set DataLoaders
+        train_loader: DataLoader for training set (used for training)
+        val_loader: DataLoader for validation set (used for validation)
+        test_loaders: Dictionary of test set DataLoaders (used for testing)
+        logger: Logger instance for logging messages
     """
 
     MODEL_REGISTRY: Dict[str, Type[ModelType]] = {
@@ -66,46 +67,32 @@ class ModelTrainer:
         "fortitran": FortiTranEstimator,
     }
 
-    def __init__(self, system_config: Dict, args: TrainingArguments):
+    EXP_LR_GAMMA = 0.995
+
+    def __init__(self, system_config: SystemConfig, model_config: ModelConfig | None, args: TrainingArguments):
         """
         Initialize the ModelTrainer.
 
         Args:
-            config: Model configuration dictionary from YAML file
-            args: Validated training arguments
+            system_config: OFDM system configuration dictionary from YAML file
+            model_config: OFDM model configuration dictionary from YAML file
+            args: Validated training arguments parsed from command line
         """
         self.system_config = system_config
+        self.model_config = model_config
         self.args = args
         self.device = torch.device(f"cuda:{args.cuda}")
         self.writer = self._setup_tensorboard()
+        self.logger = logging.getLogger(__name__)
 
         self.model = self._initialize_model()
         self.optimizer = optim.Adam(self.model.parameters(), lr=args.lr)
-        self.scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.995)
+        self.scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=self.EXP_LR_GAMMA)
         self.early_stopper = EarlyStopping(patience=args.patience)
 
-        self.training_loss = self._get_loss_function()
-        self.comparison_loss = nn.MSELoss()  # used for test set evaluation
+        self.training_loss = nn.MSELoss()
 
         self.train_loader, self.val_loader, self.test_loaders = self._get_dataloaders()
-
-    def _get_loss_function(self) -> nn.Module:
-        """Get the appropriate loss function based on arguments.
-
-        Returns:
-            The selected PyTorch loss function based on args.loss_type
-
-        Raises:
-            ValueError: If an unsupported loss type is specified
-        """
-        if self.args.loss_type == LossType.MSE:
-            return nn.MSELoss()
-        elif self.args.loss_type == LossType.MAE:
-            return nn.L1Loss()
-        elif self.args.loss_type == LossType.HUBER:
-            return nn.HuberLoss()
-        else:
-            raise ValueError(f"Unsupported loss type: {self.args.loss_type}")
 
     def _setup_tensorboard(self) -> SummaryWriter:
         """Set up TensorBoard logging.
@@ -134,38 +121,30 @@ class ModelTrainer:
             Initialized model instance of the specified type
         """
         model_class = self.MODEL_REGISTRY[self.args.model_name]
-        model = model_class(self.device, self.config, vars(self.args))
-
+        if model_class is LinearEstimator:
+            model = model_class(self.system_config, device=str(self.device))
+        else:
+            if self.model_config is None:
+                raise ValueError("model_config must be provided for non-linear models.")
+            model = model_class(self.system_config, self.model_config)
         num_params, model_summary = get_model_details(model)
-        print(model_summary)
-        print(f"Model name: {self.config['model_name']}\nNumber of parameters: {num_params}")
+        self.logger.info("\n" + model_summary)
+        self.logger.info(f"Model name: {self.args.model_name} | Number of parameters: {num_params}")
+        self.writer.add_text("Model Summary", model_summary)
         self.writer.add_text("Number of Parameters", str(num_params))
-
         return model
 
     def _get_dataloaders(self) -> Tuple[DataLoader, DataLoader, dict[str, list[tuple[str, DataLoader]]]]:
-        """Initialize all required dataloaders.
-
-        Creates DataLoader instances for:
-        - Training dataset
-        - Validation dataset
-        - Test datasets grouped by test condition (DS, MDS, SNR)
-
-        Returns:
-            Tuple containing (train_loader, val_loader, test_loaders_dict)
-        """
+        pilot_dims = [self.system_config.pilot.num_scs, self.system_config.pilot.num_symbols]
         # Training and validation dataloaders
         train_dataset = MatDataset(
             self.args.train_set,
-            self.args.pilot_dims,
-            return_type=self.config["return_type"]
+            pilot_dims
         )
         val_dataset = MatDataset(
             self.args.val_set,
-            self.args.pilot_dims,
-            return_type=self.config["return_type"]
+            pilot_dims
         )
-
         train_loader = DataLoader(
             train_dataset,
             batch_size=self.args.batch_size,
@@ -176,43 +155,34 @@ class ModelTrainer:
             batch_size=self.args.batch_size,
             shuffle=True
         )
-
-        # Test dataloaders
         test_loaders = {
             "DS": get_test_dataloaders(
                 self.args.test_set / "DS_test_set",
-                vars(self.args),
-                self.config["return_type"]
+                {"pilot_dims": pilot_dims, "batch_size": self.args.batch_size}
             ),
             "MDS": get_test_dataloaders(
                 self.args.test_set / "MDS_test_set",
-                vars(self.args),
-                self.config["return_type"]
+                {"pilot_dims": pilot_dims, "batch_size": self.args.batch_size}
             ),
             "SNR": get_test_dataloaders(
                 self.args.test_set / "SNR_test_set",
-                vars(self.args),
-                self.config["return_type"]
+                {"pilot_dims": pilot_dims, "batch_size": self.args.batch_size}
             ),
         }
-
         return train_loader, val_loader, test_loaders
 
     def _log_test_results(
             self,
             epoch: int,
-            test_stats: Dict[str, Dict],
-            ls_stats: Dict[str, Dict]
+            test_stats: Dict[str, Dict]
     ) -> None:
         """Log test results to TensorBoard.
 
-        Creates and logs visualizations comparing model performance against
-        baseline LS estimator across different test conditions.
+        Creates and logs visualizations for model performance across different test conditions.
 
         Args:
             epoch: Current training epoch
             test_stats: Dictionary of test statistics for the model
-            ls_stats: Dictionary of test statistics for the LS baseline
         """
         for key in ("DS", "MDS", "SNR"):
             # Plot test statistics
@@ -220,16 +190,13 @@ class ModelTrainer:
                 tag=f"MSE vs. {key} (Epoch:{epoch + 1})",
                 figure=get_test_stats_plot(
                     x_name=key,
-                    stats=[test_stats[key], ls_stats[key]],
-                    methods=[self.config["model_name"], "LS"]
+                    stats=[test_stats[key]],
+                    methods=[self.args.model_name]
                 )
             )
 
             # Plot error images
-            predicted_channels = predict_channels(
-                self.model,
-                self.test_loaders[key]
-            )
+            predicted_channels = self._predict_channels(self.test_loaders[key])
             self.writer.add_figure(
                 tag=f"{key} Error Images (Epoch:{epoch + 1})",
                 figure=get_error_images(
@@ -242,23 +209,12 @@ class ModelTrainer:
     def _run_tests(self, epoch: int) -> None:
         """Run tests and log results.
 
-        Evaluates the model on all test datasets, compares with LS baseline,
-        and logs performance metrics and visualizations.
+        Evaluates the model on all test datasets and logs performance metrics and visualizations.
 
         Args:
             epoch: Current training epoch
         """
-        ds_stats, mds_stats, snr_stats = get_all_test_stats(
-            self.model,
-            self.test_loaders,
-            self.comparison_loss
-        )
-
-        ls_stats = {
-            "DS": get_ls_mse_per_folder(self.args.test_set / "DS_test_set"),
-            "MDS": get_ls_mse_per_folder(self.args.test_set / "MDS_test_set"),
-            "SNR": get_ls_mse_per_folder(self.args.test_set / "SNR_test_set")
-        }
+        ds_stats, mds_stats, snr_stats = self._get_all_test_stats()
 
         test_stats = {
             "DS": ds_stats,
@@ -266,7 +222,7 @@ class ModelTrainer:
             "SNR": snr_stats
         }
 
-        self._log_test_results(epoch, test_stats, ls_stats)
+        self._log_test_results(epoch, test_stats)
 
     def _log_final_metrics(self, final_epoch: int) -> None:
         """Log final training metrics and hyperparameters.
@@ -286,11 +242,7 @@ class ModelTrainer:
 
         try:
             for key in ("DS", "MDS", "SNR"):
-                ds_stats, mds_stats, snr_stats = get_all_test_stats(
-                    self.model,
-                    self.test_loaders,
-                    self.comparison_loss
-                )
+                ds_stats, mds_stats, snr_stats = self._get_all_test_stats()
                 ls_stats = {
                     "DS": get_ls_mse_per_folder(self.args.test_set / "DS_test_set"),
                     "MDS": get_ls_mse_per_folder(self.args.test_set / "MDS_test_set"),
@@ -309,12 +261,94 @@ class ModelTrainer:
                         key,
                         {
                             "LS": ls_stats[key][val],
-                            self.config["model_name"]: stats[val]
+                            self.args.model_name: stats[val]
                         },
                         val
                     )
         except Exception as e:
             self.writer.add_text("Error", f"Failed to log final test results: {str(e)}")
+
+    def _compute_loss(self, estimated_channel, ideal_channel, loss_fn):
+        return loss_fn(
+            concat_complex_channel(estimated_channel),
+            concat_complex_channel(ideal_channel)
+        )
+
+    def _forward_pass(self, batch, model):
+        estimated_channel, ideal_channel, meta_data = batch
+        if hasattr(model, 'name') and model.name in ["fortitran", "MMSE"]:
+            h_est_re = model(torch.real(estimated_channel))
+            h_est_im = model(torch.imag(estimated_channel))
+            estimated_channel = torch.complex(h_est_re, h_est_im)
+        elif hasattr(model, 'name') and model.name == "adafortitran":
+            h_est_re = model(torch.real(estimated_channel), meta_data)
+            h_est_im = model(torch.imag(estimated_channel), meta_data)
+            estimated_channel = torch.complex(h_est_re, h_est_im)
+        else:
+            raise ValueError(f"Unknown model type: {getattr(model, 'name', type(model))}")
+        return estimated_channel, ideal_channel.to(model.device)
+
+    def _train_epoch(self):
+        train_loss = 0.0
+        self.model.train()
+        for batch in self.train_loader:
+            self.optimizer.zero_grad()
+            estimated_channel, ideal_channel = self._forward_pass(batch, self.model)
+            output = self._compute_loss(estimated_channel, ideal_channel, self.training_loss)
+            output.backward()
+            self.optimizer.step()
+            train_loss += (2 * output.item() * batch[0].size(0))
+        self.scheduler.step()
+        train_loss /= len(self.train_loader.dataset)
+        return train_loss
+
+    def _eval_model(self, eval_dataloader):
+        val_loss = 0.0
+        self.model.eval()
+        with torch.no_grad():
+            for batch in eval_dataloader:
+                estimated_channel, ideal_channel = self._forward_pass(batch, self.model)
+                output = self._compute_loss(estimated_channel, ideal_channel, self.training_loss)
+                val_loss += (2 * output.item() * batch[0].size(0))
+        val_loss /= len(eval_dataloader.dataset)
+        return val_loss
+
+    def _predict_channels(self, test_dataloaders):
+        channels = {}
+        sorted_loaders = sorted(
+            test_dataloaders,
+            key=lambda x: int(x[0].split("_")[1])
+        )
+        for name, test_dataloader in sorted_loaders:
+            with torch.no_grad():
+                batch = next(iter(test_dataloader))
+                estimated_channels, ideal_channels = self._forward_pass(batch, self.model)
+            var, val = name.split("_")
+            channels[int(val)] = {
+                "estimated_channel": estimated_channels[0],
+                "ideal_channel": ideal_channels[0]
+            }
+        return channels
+
+    def _get_test_stats(self, test_dataloaders):
+        stats = {}
+        sorted_loaders = sorted(
+            test_dataloaders,
+            key=lambda x: int(x[0].split("_")[1])
+        )
+        for name, test_dataloader in sorted_loaders:
+            var, val = name.split("_")
+            test_loss = self._eval_model(test_dataloader)
+            db_error = to_db(test_loss)
+            self.logger.info(f"{var}:{val} Test MSE: {db_error:.4f} dB")
+            stats[int(val)] = db_error
+        return stats
+
+    def _get_all_test_stats(self):
+        ds_stats = self._get_test_stats(self.test_loaders["DS"])
+        mds_stats = self._get_test_stats(self.test_loaders["MDS"])
+        snr_stats = self._get_test_stats(self.test_loaders["SNR"])
+        return ds_stats, mds_stats, snr_stats
 
     def train(self) -> None:
         """Execute the training loop.
@@ -325,62 +359,35 @@ class ModelTrainer:
         - Early stopping when validation loss plateaus
         - Logging final metrics and results
         """
-        try:
-            from tqdm import tqdm
-            use_tqdm = True
-        except ImportError:
-            use_tqdm = False
-            print("tqdm not found, progress bar will not be displayed")
-
         epoch = None
-
-        # Create progress bar if tqdm is available
-        if use_tqdm:
-            pbar = tqdm(range(self.args.max_epoch), desc="Training")
-        else:
-            pbar = range(self.args.max_epoch)
-
+        pbar = tqdm(range(self.args.max_epoch), desc="Training")
         for epoch in pbar:
             # Training step
-            train_loss = train_epoch(
-                self.model,
-                self.optimizer,
-                self.training_loss,
-                self.scheduler,
-                self.train_loader
-            )
+            train_loss = self._train_epoch()
             self.writer.add_scalar('Loss/Train', train_loss, epoch + 1)
 
             # Validation step
-            val_loss = eval_model(self.model, self.val_loader, self.training_loss)
+            val_loss = self._eval_model(self.val_loader)
             self.writer.add_scalar('Loss/Val', val_loss, epoch + 1)
 
-            # Update progress bar with loss info if tqdm is available
-            if use_tqdm:
-                pbar.set_description(
-                    f"Epoch {epoch + 1}/{self.args.max_epoch} - Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}")
+            # Update progress bar with loss info
+            pbar.set_description(
+                f"Epoch {epoch + 1}/{self.args.max_epoch} - Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}")
 
             if self.early_stopper.early_stop(val_loss):
-                if use_tqdm:
-                    pbar.write(f"Early stopping triggered at epoch {epoch + 1}")
-                else:
-                    print(f"Early stopping triggered at epoch {epoch + 1}")
+                pbar.write(f"Early stopping triggered at epoch {epoch + 1}")
                 break
 
             # Periodic testing
             if (epoch + 1) % self.args.test_every_n == 0:
                 message = f"Test results after epoch {epoch + 1}:\n" + 50 * "-"
-                if use_tqdm:
-                    pbar.write(message)
-                else:
-                    print(message)
+                pbar.write(message)
                 self._run_tests(epoch)
-
         self._log_final_metrics(epoch)
         self.writer.close()
 
 
-def train(config: Dict, args: TrainingArguments) -> None:
+def train(system_config: SystemConfig, model_config: ModelConfig | None, args: TrainingArguments) -> None:
     """
     Train an OFDM channel estimation model.
 
@@ -388,11 +395,11 @@ def train(config: Dict, args: TrainingArguments) -> None:
     with the specified configuration and runs the training process.
 
     Args:
-        config: Model configuration dictionary loaded from YAML file,
-                containing model architecture and training parameters
+        system_config: OFDM system configuration dictionary from YAML file
+        model_config: OFDM model configuration dictionary from YAML file
         args: Validated training arguments containing all necessary parameters
               for model training, including dataset paths, hyperparameters,
               and logging configuration
     """
-    trainer = ModelTrainer(config, args)
+    trainer = ModelTrainer(system_config, model_config, args)
     trainer.train()

@@ -27,16 +27,17 @@ class LinearEstimator(nn.Module):
             width (int): number of pilots across OFDM symbols
     """
 
-    def __init__(self, config: SystemConfig) -> None:
+    def __init__(self, config: SystemConfig, device: str = "cpu") -> None:
         """Initialize the MMSE estimator.
 
         Args:
             config: Validated SystemConfig object containing OFDM system parameters
+            device: Device to use for computation (cpu, cuda, etc.)
         """
         super().__init__()
 
         self.config = config
-        self.device = torch.device(config.device)
+        self.device = torch.device(device)
         self.logger = logging.getLogger(__name__)
 
         # Extract dimensions from validated config

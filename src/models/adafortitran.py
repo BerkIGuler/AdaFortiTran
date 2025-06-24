@@ -1,5 +1,5 @@
 from .fortitran import BaseFortiTranEstimator
-from src.config import SystemConfig, ModelConfig
+from src.config.schemas import SystemConfig, ModelConfig
 
 
 class AdaFortiTranEstimator(BaseFortiTranEstimator):

@@ -3,7 +3,7 @@ from torch import nn
 import logging
 from typing import Tuple, List, Optional
 
-from src.config import SystemConfig, ModelConfig
+from src.config.schemas import SystemConfig, ModelConfig
 from src.models.blocks import ConvEnhancer, PatchEmbedding, InversePatchEmbedding, TransformerEncoderForChannels, \
     ChannelAdapter
 

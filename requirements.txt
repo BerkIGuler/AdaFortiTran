@@ -2,3 +2,4 @@ torch
 pydantic
 yaml
 scipy
+tqdm

@@ -21,10 +21,8 @@ class ConfigLoader:
             system_config_path: Path to YAML configuration file for OFDM-related parameters
             model_config_path: Path to YAML configuration file for model-related parameters
 
-
         Returns:
-            ModelConfig: Validated model configuration object
-            SystemConfig: Validated system configuration object
+            Tuple of (SystemConfig, ModelConfig): Validated configuration objects
 
         Raises:
             FileNotFoundError: If one of the config files doesn't exist
@@ -34,10 +32,10 @@ class ConfigLoader:
         model_config_path = Path(model_config_path)
 
         if not system_config_path.exists():
-            raise FileNotFoundError(f"Configuration file not found: {system_config_path}")
+            raise FileNotFoundError(f"System configuration file not found: {system_config_path}")
 
         if not model_config_path.exists():
-            raise FileNotFoundError(f"Configuration file not found: {model_config_path}")
+            raise FileNotFoundError(f"Model configuration file not found: {model_config_path}")
 
         try:
             with open(system_config_path, 'r') as f:
@@ -55,16 +53,15 @@ class ConfigLoader:
             system_config = SystemConfig(**system_raw_config)
             self.logger.info(f"Successfully loaded system config from {system_config_path}")
         except ValidationError as e:
-            raise ValueError(f"Configuration validation for {system_config_path} failed:\n{e}")
-        if system_config:
-            try:
-                model_config = ModelConfig(system_config, **model_raw_config)
-                self.logger.info(f"Successfully loaded model config from {model_config_path}")
-            except ValidationError as e:
-                raise ValueError(f"Configuration validation for {model_config_path} failed:\n{e}")
+            raise ValueError(f"System configuration validation for {system_config_path} failed:\n{e}")
+
+        try:
+            model_config = ModelConfig(**model_raw_config)
+            self.logger.info(f"Successfully loaded model config from {model_config_path}")
+        except ValidationError as e:
+            raise ValueError(f"Model configuration validation for {model_config_path} failed:\n{e}")
 
         return system_config, model_config
-
 
 
 def load_config(system_config_path: Union[str, Path], model_config_path: Union[str, Path]) -> Tuple[SystemConfig, ModelConfig]:

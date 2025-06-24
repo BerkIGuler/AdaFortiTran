@@ -10,6 +10,14 @@ of training runs.
 from dataclasses import dataclass
 from pathlib import Path
 import argparse
+from enum import Enum
+
+
+class LossType(Enum):
+    """Enumeration of supported loss functions."""
+    MSE = "mse"
+    MAE = "mae"
+    HUBER = "huber"
 
 
 @dataclass
@@ -23,6 +31,7 @@ class TrainingArguments:
         # Model Configuration
         model_name: Supports Linear, AdaFortiTran, or FortiTran training
         system_config_path: Path to OFDM system configuration file
+        model_config_path: Path to model configuration file
 
         # Dataset Paths
         train_set: Path to training dataset directory
@@ -39,6 +48,8 @@ class TrainingArguments:
         lr: Learning rate for optimizer
         max_epoch: Maximum number of training epochs
         patience: Early stopping patience in epochs
+        loss_type: Type of loss function to use
+        return_type: Type of data to return from dataset
 
         # Hardware & Evaluation
         cuda: CUDA device index
@@ -48,6 +59,7 @@ class TrainingArguments:
     # Model Configuration
     model_name: str
     system_config_path: Path
+    model_config_path: Path
 
     # Dataset Paths
     train_set: Path
@@ -64,6 +76,8 @@ class TrainingArguments:
     lr: float = 1e-3
     max_epoch: int = 10
     patience: int = 3
+    loss_type: LossType = LossType.MSE
+    return_type: str = "complex"
 
     # Hardware & Evaluation
     cuda: int = 0
@@ -84,16 +98,22 @@ class TrainingArguments:
     def _validate_paths(self) -> None:
         """Validate path-related arguments.
 
-        Checks that the config file exists and has the correct extension.
+        Checks that the config files exist and have the correct extension.
 
         Raises:
-            ValueError: If the config file doesn't exist or isn't a YAML file
+            ValueError: If the config files don't exist or aren't YAML files
         """
         if not self.system_config_path.exists():
-            raise ValueError(f"Config file not found: {self.system_config_path}")
+            raise ValueError(f"System config file not found: {self.system_config_path}")
 
         if not self.system_config_path.suffix == '.yaml':
-            raise ValueError(f"Config file must be a .yaml file: {self.system_config_path}")
+            raise ValueError(f"System config file must be a .yaml file: {self.system_config_path}")
+
+        if not self.model_config_path.exists():
+            raise ValueError(f"Model config file not found: {self.model_config_path}")
+
+        if not self.model_config_path.suffix == '.yaml':
+            raise ValueError(f"Model config file must be a .yaml file: {self.model_config_path}")
 
     def _validate_numeric_args(self) -> None:
         """Validate numeric arguments.
@@ -158,6 +178,12 @@ def parse_arguments() -> TrainingArguments:
         type=Path,
         required=True,
         help='Path to YAML file containing OFDM system parameters'
+    )
+    required.add_argument(
+        '--model_config_path',
+        type=Path,
+        required=True,
+        help='Path to YAML file containing model architecture parameters'
     )
     required.add_argument(
         '--train_set',
@@ -234,8 +260,25 @@ def parse_arguments() -> TrainingArguments:
         default=1e-3,
         help='Initial learning rate'
     )
+    optional.add_argument(
+        '--loss_type',
+        type=str,
+        default="mse",
+        choices=['mse', 'mae', 'huber'],
+        help='Loss function type'
+    )
+    optional.add_argument(
+        '--return_type',
+        type=str,
+        default="complex",
+        choices=['complex', 'real'],
+        help='Type of data to return from dataset'
+    )
 
     args = parser.parse_args()
+
+    # Convert loss_type string to enum
+    args.loss_type = LossType(args.loss_type)
 
     # Create and validate TrainingArguments
     return TrainingArguments(**vars(args))
