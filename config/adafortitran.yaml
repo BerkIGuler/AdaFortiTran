@@ -1,0 +1,10 @@
+patch_size: [3, 2]
+num_layers: 6
+model_dim: 128
+num_head: 4
+activation: 'gelu'
+dropout: 0.1
+max_seq_len: 512
+pos_encoding_type: 'learnable'
+channel_adaptivity_hidden_sizes: [7, 42, 560]
+adaptive_token_length: 6
