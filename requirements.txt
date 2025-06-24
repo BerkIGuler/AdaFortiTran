@@ -1,3 +1,4 @@
 torch
 pydantic
 yaml
+scipy

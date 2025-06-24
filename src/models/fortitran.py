@@ -1,14 +1,16 @@
 import torch
 from torch import nn
 import logging
+from typing import Tuple, List, Optional
 
-from src.config.schemas import SystemConfig, ModelConfig
-from src.models.blocks import ConvEnhancer, PatchEmbedding, InversePatchEmbedding, TransformerEncoderForChannels
+from src.config import SystemConfig, ModelConfig
+from src.models.blocks import ConvEnhancer, PatchEmbedding, InversePatchEmbedding, TransformerEncoderForChannels, \
+    ChannelAdapter
 
 
-class FortiTranEstimator(nn.Module):
+class BaseFortiTranEstimator(nn.Module):
     """
-    Hybrid CNN-Transformer Channel Estimator for OFDM Systems.
+    Base Hybrid CNN-Transformer Channel Estimator for OFDM Systems.
 
     This model performs channel estimation by:
     1. Upsampling pilot symbols to full OFDM grid size
@@ -19,18 +21,21 @@ class FortiTranEstimator(nn.Module):
     6. Final convolutional refinement for high-quality channel estimates
     """
 
-    def __init__(self, system_config: SystemConfig, model_config: ModelConfig) -> None:
+    def __init__(self, system_config: SystemConfig, model_config: ModelConfig,
+                 use_channel_adaptation: bool = False) -> None:
         """
-        Initialize the FortiTranEstimator.
+        Initialize the BaseFortiTranEstimator.
 
         Args:
             system_config: OFDM system configuration (subcarriers, symbols, pilot arrangement)
             model_config: Model architecture configuration (patch size, layers, etc.)
+            use_channel_adaptation: Whether to enable channel adaptation features
         """
         super().__init__()
 
         self.system_config = system_config
         self.model_config = model_config
+        self.use_channel_adaptation = use_channel_adaptation
         self.device = torch.device(model_config.device)
         self.logger = logging.getLogger(self.__class__.__name__)
 
@@ -68,41 +73,57 @@ class FortiTranEstimator(nn.Module):
                 self.model_config.patch_size[0] * self.model_config.patch_size[1]
         )
 
+        # Adaptive patch length (only used if channel adaptation is enabled)
+        if self.use_channel_adaptation:
+            self.adaptive_patch_length = self.patch_length + self.model_config.adaptive_token_length
+        else:
+            self.adaptive_patch_length = self.patch_length
+
     def _build_architecture(self) -> None:
         """Construct the model architecture components."""
         # 1. Pilot-to-OFDM upsampling
         self.pilot_upsampler = nn.Linear(self.pilot_features, self.ofdm_features)
+
         # 2. Initial convolutional enhancement
         self.initial_enhancer = ConvEnhancer()
 
         # 3. Patch embedding for transformer processing
         self.patch_embedder = PatchEmbedding(self.model_config.patch_size)
 
-        # 4. Transformer encoder for sequence modeling
+        # 4. Channel adapter (conditional on use_channel_adaptation)
+        if self.use_channel_adaptation:
+            self.channel_adapter = ChannelAdapter(self.model_config.channel_adaptivity_hidden_sizes)
+
+        # 5. Transformer encoder for sequence modeling
+        transformer_input_dim = self.adaptive_patch_length if self.use_channel_adaptation else self.patch_length
+        transformer_output_dim = self.patch_length  # Always output standard patch length
+
         self.transformer_encoder = TransformerEncoderForChannels(
-            input_dim=self.patch_length,
-            output_dim=self.patch_length,
+            input_dim=transformer_input_dim,
+            output_dim=transformer_output_dim,
             model_dim=self.model_config.model_dim,
             num_head=self.model_config.num_head,
             activation=self.model_config.activation,
             dropout=self.model_config.dropout,
             num_layers=self.model_config.num_layers,
             max_len=self.model_config.max_seq_len,
-            pos_encoding_type=self.model_config.pos_encoding_type,
+            pos_encoding_type=self.model_config.pos_encoding_type
         )
 
-        # 5. Patch reconstruction
+        # 6. Patch reconstruction
         self.patch_reconstructor = InversePatchEmbedding(
             self.ofdm_size,
             self.model_config.patch_size
         )
 
-        # 6. Final convolutional refinement
+        # 7. Final convolutional refinement
         self.final_refiner = ConvEnhancer()
 
     def _log_initialization_info(self) -> None:
         """Log model initialization details."""
-        self.logger.info("FortiTranEstimator initialized successfully:")
+        adaptation_status = "enabled" if self.use_channel_adaptation else "disabled"
+        self.logger.info(f"{self.__class__.__name__} initialized successfully:")
+        self.logger.info(f"  Channel adaptation: {adaptation_status}")
         self.logger.info(f"  OFDM grid: {self.ofdm_size[0]}×{self.ofdm_size[1]} = {self.ofdm_features} elements")
         self.logger.info(f"  Pilot grid: {self.pilot_size[0]}×{self.pilot_size[1]} = {self.pilot_features} elements")
         self.logger.info(f"  Patch size: {self.model_config.patch_size}")
@@ -115,34 +136,53 @@ class FortiTranEstimator(nn.Module):
         self.logger.info(f"  Total parameters: {total_params:,}")
         self.logger.info(f"  Trainable parameters: {trainable_params:,}")
 
-    def forward(self, pilot_symbols: torch.Tensor) -> torch.Tensor:
+    def forward(self, pilot_symbols: torch.Tensor, meta_data: Optional[Tuple] = None) -> torch.Tensor:
         """
         Forward pass for channel estimation.
 
         Args:
             pilot_symbols: Complex pilot symbols of shape [batch, pilot_scs, pilot_symbols]
+            meta_data: Channel conditions (only used if channel adaptation is enabled)
 
         Returns:
             Estimated channel matrix of shape [batch, ofdm_scs, ofdm_symbols]
         """
+        # Validate inputs based on adaptation mode
+        if self.use_channel_adaptation and meta_data is None:
+            raise ValueError("meta_data is required when channel adaptation is enabled")
+
+        if not self.use_channel_adaptation and meta_data is not None:
+            self.logger.warning("meta_data provided but channel adaptation is disabled - ignoring meta_data")
+
+        # Extract channel conditions if adaptation is enabled
+        channel_conditions = None
+        if self.use_channel_adaptation and meta_data is not None:
+            _, snr, delay_spread, max_dop_shift, _, _ = meta_data
+            channel_conditions = [
+                tensor.to(self.device)
+                for tensor in (snr, delay_spread, max_dop_shift)
+            ]
+
         # Ensure input is on correct device
         pilot_symbols = pilot_symbols.to(self.device)
 
         # Process real and imaginary parts separately
-        real_estimate = self._forward_real_valued(pilot_symbols.real)
-        imag_estimate = self._forward_real_valued(pilot_symbols.imag)
+        real_estimate = self._forward_real_valued(pilot_symbols.real, channel_conditions)
+        imag_estimate = self._forward_real_valued(pilot_symbols.imag, channel_conditions)
 
         # Combine into complex tensor
         channel_estimate = torch.complex(real_estimate, imag_estimate)
 
         return channel_estimate
 
-    def _forward_real_valued(self, x: torch.Tensor) -> torch.Tensor:
+    def _forward_real_valued(self, x: torch.Tensor,
+                             channel_conditions: Optional[List[torch.Tensor]] = None) -> torch.Tensor:
         """
         Process real-valued input through the estimation pipeline.
 
         Args:
             x: Real-valued input tensor [batch, pilot_features] or [batch, pilot_scs, pilot_symbols]
+            channel_conditions: Channel conditions for adaptation (optional)
 
         Returns:
             Real-valued channel estimate [batch, ofdm_scs, ofdm_symbols]
@@ -165,16 +205,23 @@ class FortiTranEstimator(nn.Module):
         # Stage 3: Convert to patch embeddings
         patch_embeddings = self.patch_embedder(conv_enhanced)
 
-        # Stage 4: Transformer processing for long-range dependencies
-        transformer_output = self.transformer_encoder(patch_embeddings)
+        # Stage 4: Apply channel adaptation if enabled
+        if self.use_channel_adaptation and channel_conditions is not None:
+            encoded_channel_condition = self.channel_adapter(*channel_conditions)
+            transformer_input = torch.cat((patch_embeddings, encoded_channel_condition), dim=2)
+        else:
+            transformer_input = patch_embeddings
 
-        # Stage 5: Reconstruct spatial representation
+        # Stage 5: Transformer processing for long-range dependencies
+        transformer_output = self.transformer_encoder(transformer_input)
+
+        # Stage 6: Reconstruct spatial representation
         reconstructed = self.patch_reconstructor(transformer_output)
 
-        # Stage 6: Apply residual connection
+        # Stage 7: Apply residual connection
         residual_combined = conv_enhanced + reconstructed
 
-        # Stage 7: Final convolutional refinement
+        # Stage 8: Final convolutional refinement
         refined_output = torch.squeeze(self.final_refiner(torch.unsqueeze(residual_combined, dim=1)), dim=1)
 
         return refined_output
@@ -183,13 +230,33 @@ class FortiTranEstimator(nn.Module):
         """Return model configuration and statistics."""
         return {
             'model_name': self.__class__.__name__,
+            'channel_adaptation': self.use_channel_adaptation,
             'ofdm_size': self.ofdm_size,
             'pilot_size': self.pilot_size,
             'patch_size': self.model_config.patch_size,
             'patch_length': self.patch_length,
+            'adaptive_patch_length': self.adaptive_patch_length,
             'model_dim': self.model_config.model_dim,
             'num_layers': self.model_config.num_layers,
             'device': str(self.device),
             'total_parameters': sum(p.numel() for p in self.parameters()),
             'trainable_parameters': sum(p.numel() for p in self.parameters() if p.requires_grad)
         }
+
+
+class FortiTranEstimator(BaseFortiTranEstimator):
+    """
+    Standard Hybrid CNN-Transformer Channel Estimator for OFDM Systems.
+
+    This is the base version without channel adaptation features.
+    """
+
+    def __init__(self, system_config: SystemConfig, model_config: ModelConfig) -> None:
+        """
+        Initialize the FortiTranEstimator.
+
+        Args:
+            system_config: OFDM system configuration (subcarriers, symbols, pilot arrangement)
+            model_config: Model architecture configuration (patch size, layers, etc.)
+        """
+        super().__init__(system_config, model_config, use_channel_adaptation=False)
