@@ -120,13 +120,18 @@ class ModelTrainer:
         Returns:
             Initialized model instance of the specified type
         """
-        model_class = self.MODEL_REGISTRY[self.args.model_name]
-        if model_class is LinearEstimator:
-            model = model_class(self.system_config, device=str(self.device))
-        else:
+        if self.args.model_name == "linear":
+            model = LinearEstimator(self.system_config, device=str(self.device))
+        elif self.args.model_name == "adafortitran":
             if self.model_config is None:
-                raise ValueError("model_config must be provided for non-linear models.")
-            model = model_class(self.system_config, self.model_config)
+                raise ValueError("model_config must be provided for AdaFortiTranEstimator.")
+            model = AdaFortiTranEstimator(self.system_config, self.model_config)
+        elif self.args.model_name == "fortitran":
+            if self.model_config is None:
+                raise ValueError("model_config must be provided for FortiTranEstimator.")
+            model = FortiTranEstimator(self.system_config, self.model_config)
+        else:
+            raise ValueError(f"Unknown model name: {self.args.model_name}")
         num_params, model_summary = get_model_details(model)
         self.logger.info("\n" + model_summary)
         self.logger.info(f"Model name: {self.args.model_name} | Number of parameters: {num_params}")
@@ -276,41 +281,51 @@ class ModelTrainer:
 
     def _forward_pass(self, batch, model):
         estimated_channel, ideal_channel, meta_data = batch
-        if hasattr(model, 'name') and model.name in ["fortitran", "MMSE"]:
+        if isinstance(model, FortiTranEstimator):
             h_est_re = model(torch.real(estimated_channel))
             h_est_im = model(torch.imag(estimated_channel))
             estimated_channel = torch.complex(h_est_re, h_est_im)
-        elif hasattr(model, 'name') and model.name == "adafortitran":
+        elif isinstance(model, AdaFortiTranEstimator):
             h_est_re = model(torch.real(estimated_channel), meta_data)
             h_est_im = model(torch.imag(estimated_channel), meta_data)
             estimated_channel = torch.complex(h_est_re, h_est_im)
+        elif isinstance(model, LinearEstimator):
+            h_est_re = model(torch.real(estimated_channel))
+            h_est_im = model(torch.imag(estimated_channel))
+            estimated_channel = torch.complex(h_est_re, h_est_im)
         else:
-            raise ValueError(f"Unknown model type: {getattr(model, 'name', type(model))}")
+            raise ValueError(f"Unknown model type: {type(model)}")
         return estimated_channel, ideal_channel.to(model.device)
 
     def _train_epoch(self):
         train_loss = 0.0
         self.model.train()
+        num_samples = 0
         for batch in self.train_loader:
             self.optimizer.zero_grad()
             estimated_channel, ideal_channel = self._forward_pass(batch, self.model)
             output = self._compute_loss(estimated_channel, ideal_channel, self.training_loss)
             output.backward()
             self.optimizer.step()
-            train_loss += (2 * output.item() * batch[0].size(0))
+            batch_size = batch[0].size(0)
+            train_loss += (2 * output.item() * batch_size)
+            num_samples += batch_size
         self.scheduler.step()
-        train_loss /= len(self.train_loader.dataset)
+        train_loss /= num_samples
         return train_loss
 
     def _eval_model(self, eval_dataloader):
         val_loss = 0.0
         self.model.eval()
+        num_samples = 0
         with torch.no_grad():
             for batch in eval_dataloader:
                 estimated_channel, ideal_channel = self._forward_pass(batch, self.model)
                 output = self._compute_loss(estimated_channel, ideal_channel, self.training_loss)
-                val_loss += (2 * output.item() * batch[0].size(0))
-        val_loss /= len(eval_dataloader.dataset)
+                batch_size = batch[0].size(0)
+                val_loss += (2 * output.item() * batch_size)
+                num_samples += batch_size
+        val_loss /= num_samples
         return val_loss
 
     def _predict_channels(self, test_dataloaders):
@@ -359,9 +374,10 @@ class ModelTrainer:
         - Early stopping when validation loss plateaus
         - Logging final metrics and results
         """
-        epoch = None
+        last_epoch = 0
         pbar = tqdm(range(self.args.max_epoch), desc="Training")
         for epoch in pbar:
+            last_epoch = epoch
             # Training step
             train_loss = self._train_epoch()
             self.writer.add_scalar('Loss/Train', train_loss, epoch + 1)
@@ -383,7 +399,7 @@ class ModelTrainer:
                 message = f"Test results after epoch {epoch + 1}:\n" + 50 * "-"
                 pbar.write(message)
                 self._run_tests(epoch)
-        self._log_final_metrics(epoch)
+        self._log_final_metrics(last_epoch)
         self.writer.close()
 
 
