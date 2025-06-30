@@ -1,2 +1,17 @@
 .idea/
 +**/__pycache__/
+
+# Ignore data files but keep directory structure
+data/**/*.mat
+data/**/*.npy
+data/**/*.pkl
+data/**/*.h5
+data/**/*.hdf5
+data/**/*.csv
+data/**/*.json
+data/**/*.txt
+data/**/*.bin
+data/**/*.dat
+
+# But don't ignore .gitkeep files
+!data/**/.gitkeep
