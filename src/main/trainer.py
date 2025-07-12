@@ -69,7 +69,7 @@ class ModelTrainer:
 
     EXP_LR_GAMMA = 0.995
 
-    def __init__(self, system_config: SystemConfig, model_config: ModelConfig | None, args: TrainingArguments):
+    def __init__(self, system_config: SystemConfig, model_config: ModelConfig, args: TrainingArguments):
         """
         Initialize the ModelTrainer.
 
@@ -121,14 +121,10 @@ class ModelTrainer:
             Initialized model instance of the specified type
         """
         if self.args.model_name == "linear":
-            model = LinearEstimator(self.system_config, device=str(self.device))
+            model = LinearEstimator(self.system_config, self.model_config)
         elif self.args.model_name == "adafortitran":
-            if self.model_config is None:
-                raise ValueError("model_config must be provided for AdaFortiTranEstimator.")
             model = AdaFortiTranEstimator(self.system_config, self.model_config)
         elif self.args.model_name == "fortitran":
-            if self.model_config is None:
-                raise ValueError("model_config must be provided for FortiTranEstimator.")
             model = FortiTranEstimator(self.system_config, self.model_config)
         else:
             raise ValueError(f"Unknown model name: {self.args.model_name}")
@@ -406,7 +402,7 @@ class ModelTrainer:
         self.writer.close()
 
 
-def train(system_config: SystemConfig, model_config: ModelConfig | None, args: TrainingArguments) -> None:
+def train(system_config: SystemConfig, model_config: ModelConfig, args: TrainingArguments) -> None:
     """
     Train an OFDM channel estimation model.
 

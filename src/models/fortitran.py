@@ -4,8 +4,7 @@ import logging
 from typing import Tuple, List, Optional
 
 from src.config.schemas import SystemConfig, ModelConfig
-from src.models.blocks import ConvEnhancer, PatchEmbedding, InversePatchEmbedding, TransformerEncoderForChannels, \
-    ChannelAdapter
+from src.models.blocks import ConvEnhancer, PatchEmbedding, InversePatchEmbedding, TransformerEncoderForChannels, ChannelAdapter
 
 
 class BaseFortiTranEstimator(nn.Module):
@@ -13,11 +12,11 @@ class BaseFortiTranEstimator(nn.Module):
     Base Hybrid CNN-Transformer Channel Estimator for OFDM Systems.
 
     This model performs channel estimation by:
-    1. Upsampling pilot symbols to full OFDM grid size
-    2. Applying convolutional enhancement for spatial features
+    1. Upsampling pilot symbols to full OFDM grid size (with linear layer)
+    2. Applying convolutional enhancement for subcarrier-symbol features
     3. Converting to patch embeddings for transformer processing
     4. Using transformer encoder to capture long-range dependencies
-    5. Reconstructing spatial representation and applying residual connections
+    5. Reconstructing subcarrier-symbol representation and applying residual connections
     6. Final convolutional refinement for high-quality channel estimates
     """
 
@@ -29,7 +28,7 @@ class BaseFortiTranEstimator(nn.Module):
         Args:
             system_config: OFDM system configuration (subcarriers, symbols, pilot arrangement)
             model_config: Model architecture configuration (patch size, layers, etc.)
-            use_channel_adaptation: Whether to enable channel adaptation features
+            use_channel_adaptation: Whether to enable channel adaptation features (disabled for FortiTran)
         """
         super().__init__()
 
@@ -73,11 +72,13 @@ class BaseFortiTranEstimator(nn.Module):
                 self.model_config.patch_size[0] * self.model_config.patch_size[1]
         )
 
-        # Adaptive patch length (only used if channel adaptation is enabled)
+        # Transformer input dimension (includes channel tokens if adaptation is enabled)
         if self.use_channel_adaptation:
-            self.adaptive_patch_length = self.patch_length + self.model_config.adaptive_token_length
+            if self.model_config.adaptive_token_length is None:
+                raise ValueError("adaptive_token_length must be set when channel adaptation is enabled")
+            self.transformer_input_dim = self.patch_length + self.model_config.adaptive_token_length
         else:
-            self.adaptive_patch_length = self.patch_length
+            self.transformer_input_dim = self.patch_length
 
     def _build_architecture(self) -> None:
         """Construct the model architecture components."""
@@ -92,14 +93,19 @@ class BaseFortiTranEstimator(nn.Module):
 
         # 4. Channel adapter (conditional on use_channel_adaptation)
         if self.use_channel_adaptation:
-            self.channel_adapter = ChannelAdapter(self.model_config.channel_adaptivity_hidden_sizes)
+            if self.model_config.channel_adaptivity_hidden_sizes is None:
+                raise ValueError("channel_adaptivity_hidden_sizes must be set when channel adaptation is enabled")
+            # Convert list to tuple as expected by ChannelAdapter (exactly 3 values)
+            hidden_sizes = tuple(self.model_config.channel_adaptivity_hidden_sizes)
+            if len(hidden_sizes) != 3:
+                raise ValueError("channel_adaptivity_hidden_sizes must have exactly 3 values")
+            self.channel_adapter = ChannelAdapter(hidden_sizes)
 
         # 5. Transformer encoder for sequence modeling
-        transformer_input_dim = self.adaptive_patch_length if self.use_channel_adaptation else self.patch_length
         transformer_output_dim = self.patch_length  # Always output standard patch length
 
         self.transformer_encoder = TransformerEncoderForChannels(
-            input_dim=transformer_input_dim,
+            input_dim=self.transformer_input_dim,
             output_dim=transformer_output_dim,
             model_dim=self.model_config.model_dim,
             num_head=self.model_config.num_head,
@@ -189,7 +195,7 @@ class BaseFortiTranEstimator(nn.Module):
         """
         batch_size = x.shape[0]
 
-        # Flatten spatial dimensions for linear upsampling
+        # Flatten subcarrier and symbol dimensions for linear upsampling
         if x.dim() > 2:
             x = x.view(batch_size, -1)
 
@@ -215,7 +221,7 @@ class BaseFortiTranEstimator(nn.Module):
         # Stage 5: Transformer processing for long-range dependencies
         transformer_output = self.transformer_encoder(transformer_input)
 
-        # Stage 6: Reconstruct spatial representation
+        # Stage 6: Reconstruct subcarrier-symbol representation
         reconstructed = self.patch_reconstructor(transformer_output)
 
         # Stage 7: Apply residual connection
@@ -235,7 +241,7 @@ class BaseFortiTranEstimator(nn.Module):
             'pilot_size': self.pilot_size,
             'patch_size': self.model_config.patch_size,
             'patch_length': self.patch_length,
-            'adaptive_patch_length': self.adaptive_patch_length,
+            'transformer_input_dim': self.transformer_input_dim,
             'model_dim': self.model_config.model_dim,
             'num_layers': self.model_config.num_layers,
             'device': str(self.device),

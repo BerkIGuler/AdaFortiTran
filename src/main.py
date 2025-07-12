@@ -44,6 +44,7 @@ from pathlib import Path
 from src.main.parser import parse_arguments
 from src.main.trainer import train
 from src.config import load_config
+from src.config.schemas import ModelConfig
 
 
 def setup_logging(log_level: str) -> None:
@@ -88,10 +89,10 @@ def main() -> None:
         logger.info("Configuration loaded successfully")
         logger.info(f"OFDM dimensions: {system_config.ofdm.num_scs} subcarriers x {system_config.ofdm.num_symbols} symbols")
         logger.info(f"Pilot dimensions: {system_config.pilot.num_scs} subcarriers x {system_config.pilot.num_symbols} symbols")
-        if model_config is not None:
-            logger.info(f"Model architecture: {model_config.num_layers} layers, {model_config.model_dim} dimensions")
+        if model_config.model_type == "linear":
+            logger.info(f"Linear model with device: {model_config.device}")
         else:
-            logger.info("Using Linear model (no model config required)")
+            logger.info(f"Model architecture: {model_config.num_layers} layers, {model_config.model_dim} dimensions")
         
         # Start training
         logger.info("Initializing training...")

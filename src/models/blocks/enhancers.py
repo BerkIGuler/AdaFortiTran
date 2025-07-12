@@ -23,9 +23,9 @@ class ConvEnhancer(nn.Module):
         """Forward pass through the convolutional enhancement network.
 
         Args:
-            x (torch.Tensor): Input tensor of shape (batch_size, 1, height, width)
+            x (torch.Tensor): Input tensor of shape (batch_size, 1, num_subcarriers, num_symbols)
 
         Returns:
-            torch.Tensor: Enhanced tensor of shape (batch_size, 1, height, width)
+            torch.Tensor: Enhanced tensor of shape (batch_size, 1, num_subcarriers, num_symbols)
         """
         return self.conv_block(x)

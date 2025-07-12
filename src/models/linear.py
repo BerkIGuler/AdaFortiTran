@@ -10,43 +10,47 @@ import logging
 import torch
 import torch.nn as nn
 
-from src.config.schemas import SystemConfig
+from src.config.schemas import SystemConfig, ModelConfig
 
 
 class LinearEstimator(nn.Module):
     """Learned MMSE estimator.
 
+    Find W such that W*h_pilot = h_hat, where h_hat is the estimated channel by stochastic gradient descent on |h_hat - h_ideal|^2
+
     Attributes:
         device (torch.device): Target device for computation
-        config (SystemConfig): Validated configuration object
-        ofdm_size (Tuple[int, int]): Dimensions of OFDM frame as (height, width)
-            height (int): number of sub-carriers
-            width (int): number of OFDM symbols
-        pilot_size (Tuple[int, int]): Dimensions of pilot signal as (height, width)
-            height (int): number of pilots across sub-carriers
-            width (int): number of pilots across OFDM symbols
+        system_config (SystemConfig): Validated configuration object for OFDM system parameters
+        model_config (ModelConfig): Validated configuration object for model parameters
+        ofdm_size (Tuple[int, int]): Dimensions of OFDM frame as (num_subcarriers, num_symbols)
+            num_subcarriers (int): number of sub-carriers
+            num_symbols (int): number of OFDM symbols
+        pilot_size (Tuple[int, int]): Dimensions of pilot signal as (num_subcarriers, num_symbols)
+            num_subcarriers (int): number of pilots across sub-carriers
+            num_symbols (int): number of pilots across OFDM symbols
     """
 
-    def __init__(self, config: SystemConfig, device: str = "cpu") -> None:
+    def __init__(self, system_config: SystemConfig, model_config: ModelConfig) -> None:
         """Initialize the MMSE estimator.
 
         Args:
-            config: Validated SystemConfig object containing OFDM system parameters
-            device: Device to use for computation (cpu, cuda, etc.)
+            system_config: Validated SystemConfig object containing OFDM system parameters
+            model_config: Validated ModelConfig object containing model parameters
         """
         super().__init__()
 
-        self.config = config
-        self.device = torch.device(device)
+        self.system_config = system_config
+        self.model_config = model_config
+        self.device = torch.device(model_config.device)
         self.logger = logging.getLogger(__name__)
 
         # Extract dimensions from validated config
-        self.ofdm_size = (config.ofdm.num_scs, config.ofdm.num_symbols)
-        self.pilot_size = (config.pilot.num_scs, config.pilot.num_symbols)
+        self.ofdm_size = (system_config.ofdm.num_scs, system_config.ofdm.num_symbols)
+        self.pilot_size = (system_config.pilot.num_scs, system_config.pilot.num_symbols)
 
         # Calculate feature dimensions
-        in_feature_dim = config.pilot.num_scs * config.pilot.num_symbols
-        out_feature_dim = config.ofdm.num_scs * config.ofdm.num_symbols
+        in_feature_dim = system_config.pilot.num_scs * system_config.pilot.num_symbols
+        out_feature_dim = system_config.ofdm.num_scs * system_config.ofdm.num_symbols
 
         self.logger.info(f"Initializing LinearEstimator:")
         self.logger.info(f"  OFDM size: {self.ofdm_size}")
@@ -70,7 +74,7 @@ class LinearEstimator(nn.Module):
             Estimated OFDM signal tensor with shape
             (batch_size, ofdm_size[0], ofdm_size[1])
         """
-        # pytorch does nothin if input is already on correct device
+        # pytorch does nothing if input is already on correct device
         x = x.to(self.device)
         self.logger.debug(f"Input shape: {x.size()}")
 
@@ -94,14 +98,6 @@ class LinearEstimator(nn.Module):
         self.logger.debug(f"Reshaped output shape: {x.size()}")
 
         return x
-
-    def get_config(self) -> SystemConfig:
-        """Get the configuration used by this estimator.
-
-        Returns:
-            SystemConfig: The configuration object
-        """
-        return self.config
 
     def __repr__(self) -> str:
         """String representation of the estimator."""
