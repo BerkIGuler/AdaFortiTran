@@ -120,7 +120,7 @@ def eval_model(
             output = _compute_loss(estimated_channel, ideal_channel, loss_fn)
             val_loss += (2 * output.item() * batch[0].size(0))
 
-    val_loss /= len(eval_dataloader.dataset)
+    val_loss /= sum(len(batch[0]) for batch in eval_dataloader)
     return val_loss
 
 
@@ -206,7 +206,7 @@ def train_epoch(
         train_loss += (2 * output.item() * batch[0].size(0))
 
     scheduler.step()
-    train_loss /= len(train_dataloader.dataset)
+    train_loss /= sum(len(batch[0]) for batch in train_dataloader)
     return train_loss
 
 
@@ -225,20 +225,17 @@ def _forward_pass(batch: BatchType, model: nn.Module) -> Tuple[ComplexTensor, Co
         Tuple of (processed_estimated_channel, ideal_channel)
 
     Raises:
-        ValueError: If model name is not recognized
+        ValueError: If model type is not recognized
     """
     estimated_channel, ideal_channel, meta_data = batch
 
-    if model.name in ["fortitran", "MMSE"]:
-        h_est_re = model(torch.real(estimated_channel))
-        h_est_im = model(torch.imag(estimated_channel))
-        estimated_channel = torch.complex(h_est_re, h_est_im)
-    elif model.name == "adafortitran":
-        h_est_re = model(torch.real(estimated_channel), meta_data)
-        h_est_im = model(torch.imag(estimated_channel), meta_data)
-        estimated_channel = torch.complex(h_est_re, h_est_im)
+    # All models now handle complex input directly
+    if hasattr(model, 'use_channel_adaptation') and model.use_channel_adaptation:
+        # AdaFortiTran uses meta_data for channel adaptation
+        estimated_channel = model(estimated_channel, meta_data)
     else:
-        raise ValueError(f"Unknown model type: {model.name}")
+        # Linear and FortiTran models don't use meta_data
+        estimated_channel = model(estimated_channel)
 
     return estimated_channel, ideal_channel.to(model.device)
 

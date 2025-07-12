@@ -81,7 +81,7 @@ class ModelTrainer:
         self.system_config = system_config
         self.model_config = model_config
         self.args = args
-        self.device = torch.device(f"cuda:{args.cuda}")
+        self.device = torch.device(model_config.device)
         self.writer = self._setup_tensorboard()
         self.logger = logging.getLogger(__name__)
 
@@ -120,14 +120,12 @@ class ModelTrainer:
         Returns:
             Initialized model instance of the specified type
         """
-        if self.args.model_name == "linear":
-            model = LinearEstimator(self.system_config, self.model_config)
-        elif self.args.model_name == "adafortitran":
-            model = AdaFortiTranEstimator(self.system_config, self.model_config)
-        elif self.args.model_name == "fortitran":
-            model = FortiTranEstimator(self.system_config, self.model_config)
-        else:
-            raise ValueError(f"Unknown model name: {self.args.model_name}")
+        if self.args.model_name not in self.MODEL_REGISTRY:
+            raise ValueError(f"Unknown model name: {self.args.model_name}. Available: {list(self.MODEL_REGISTRY.keys())}")
+        
+        model_class = self.MODEL_REGISTRY[self.args.model_name]
+        model = model_class(self.system_config, self.model_config)
+        
         num_params, model_summary = get_model_details(model)
         self.logger.info("\n" + model_summary)
         self.logger.info(f"Model name: {self.args.model_name} | Number of parameters: {num_params}")
@@ -280,20 +278,15 @@ class ModelTrainer:
 
     def _forward_pass(self, batch, model):
         estimated_channel, ideal_channel, meta_data = batch
-        if isinstance(model, FortiTranEstimator):
-            h_est_re = model(torch.real(estimated_channel))
-            h_est_im = model(torch.imag(estimated_channel))
-            estimated_channel = torch.complex(h_est_re, h_est_im)
-        elif isinstance(model, AdaFortiTranEstimator):
-            h_est_re = model(torch.real(estimated_channel), meta_data)
-            h_est_im = model(torch.imag(estimated_channel), meta_data)
-            estimated_channel = torch.complex(h_est_re, h_est_im)
-        elif isinstance(model, LinearEstimator):
-            h_est_re = model(torch.real(estimated_channel))
-            h_est_im = model(torch.imag(estimated_channel))
-            estimated_channel = torch.complex(h_est_re, h_est_im)
+        
+        # All models now handle complex input directly
+        if isinstance(model, AdaFortiTranEstimator):
+            # AdaFortiTran uses meta_data for channel adaptation
+            estimated_channel = model(estimated_channel, meta_data)
         else:
-            raise ValueError(f"Unknown model type: {type(model)}")
+            # Linear and FortiTran models don't use meta_data
+            estimated_channel = model(estimated_channel)
+            
         return estimated_channel, ideal_channel.to(model.device)
 
     def _train_epoch(self):

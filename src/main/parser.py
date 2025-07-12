@@ -9,16 +9,8 @@ of training runs.
 
 from pathlib import Path
 import argparse
-from enum import Enum
 from pydantic import BaseModel, Field, model_validator
 from typing import Self
-
-
-class LossType(Enum):
-    """Enumeration of supported loss functions."""
-    MSE = "mse"
-    MAE = "mae"
-    HUBER = "huber"
 
 
 class TrainingArguments(BaseModel):
@@ -29,7 +21,7 @@ class TrainingArguments(BaseModel):
 
     Attributes:
         # Model Configuration
-        model_name: Supports Linear, AdaFortiTran, or FortiTran training
+        model_name: Supports linear, adafortitran, or fortitran training
         system_config_path: Path to OFDM system configuration file
         model_config_path: Path to model configuration file
 
@@ -42,17 +34,15 @@ class TrainingArguments(BaseModel):
         exp_id: Experiment identifier string
         python_log_level: Logging verbosity level
         tensorboard_log_dir: Directory for tensorboard logs
+        python_log_dir: Directory for python logging files
 
         # Training Hyperparameters
         batch_size: Number of samples per batch
         lr: Learning rate for optimizer
         max_epoch: Maximum number of training epochs
         patience: Early stopping patience in epochs
-        loss_type: Type of loss function to use
-        return_type: Type of data to return from dataset
 
-        # Hardware & Evaluation
-        cuda: CUDA device index
+        # Evaluation
         test_every_n: Number of epochs between test evaluations
     """
 
@@ -70,17 +60,15 @@ class TrainingArguments(BaseModel):
     exp_id: str = Field(..., description="Experiment identifier for log folder naming")
     python_log_level: str = Field(default="INFO", description="Logger level for python logging module")
     tensorboard_log_dir: Path = Field(default=Path("runs"), description="Directory for tensorboard logs")
+    python_log_dir: Path = Field(default=Path("logs"), description="Directory for python logging files")
 
     # Training Hyperparameters
     batch_size: int = Field(default=64, gt=0, description="Training batch size")
     lr: float = Field(default=1e-3, gt=0, description="Initial learning rate")
     max_epoch: int = Field(default=10, gt=0, description="Maximum number of training epochs")
     patience: int = Field(default=3, gt=0, description="Early stopping patience (epochs)")
-    loss_type: LossType = Field(default=LossType.MSE, description="Loss function type")
-    return_type: str = Field(default="complex", description="Type of data to return from dataset")
 
-    # Hardware & Evaluation
-    cuda: int = Field(default=0, ge=0, description="CUDA device index (0 for single GPU)")
+    # Evaluation
     test_every_n: int = Field(default=10, gt=0, description="Test model every N epochs")
 
     @model_validator(mode='after')
@@ -133,8 +121,8 @@ def parse_arguments() -> TrainingArguments:
         '--model_name',
         type=str,
         required=True,
-        choices=['Linear', 'AdaFortiTran', 'FortiTran'],
-        help='Model type to train (Linear, AdaFortiTran, or FortiTran)'
+        choices=['linear', 'adafortitran', 'fortitran'],
+        help='Model type to train (linear, adafortitran, or fortitran)'
     )
     required.add_argument(
         '--system_config_path',
@@ -188,6 +176,12 @@ def parse_arguments() -> TrainingArguments:
         help='Directory for tensorboard logs'
     )
     optional.add_argument(
+        '--python_log_dir',
+        type=Path,
+        default="logs",
+        help='Directory for python logging files'
+    )
+    optional.add_argument(
         '--test_every_n',
         type=int,
         default=10,
@@ -211,55 +205,16 @@ def parse_arguments() -> TrainingArguments:
         default=64,
         help='Training batch size'
     )
-    optional.add_argument(
-        '--cuda',
-        type=int,
-        default=0,
-        help='CUDA device index (0 for single GPU)'
-    )
+
     optional.add_argument(
         '--lr',
         type=float,
         default=1e-3,
         help='Initial learning rate'
     )
-    optional.add_argument(
-        '--loss_type',
-        type=str,
-        default="mse",
-        choices=['mse', 'mae', 'huber'],
-        help='Loss function type'
-    )
-    optional.add_argument(
-        '--return_type',
-        type=str,
-        default="complex",
-        choices=['complex', 'real'],
-        help='Type of data to return from dataset'
-    )
+
 
     args = parser.parse_args()
 
-    # Convert loss_type string to enum
-    loss_type = LossType(args.loss_type)
-
     # Create and validate TrainingArguments
-    return TrainingArguments(
-        model_name=args.model_name,
-        system_config_path=args.system_config_path,
-        model_config_path=args.model_config_path,
-        train_set=args.train_set,
-        val_set=args.val_set,
-        test_set=args.test_set,
-        exp_id=args.exp_id,
-        python_log_level=args.python_log_level,
-        tensorboard_log_dir=args.tensorboard_log_dir,
-        batch_size=args.batch_size,
-        lr=args.lr,
-        max_epoch=args.max_epoch,
-        patience=args.patience,
-        loss_type=loss_type,
-        return_type=args.return_type,
-        cuda=args.cuda,
-        test_every_n=args.test_every_n
-    )
+    return TrainingArguments(**vars(args))
