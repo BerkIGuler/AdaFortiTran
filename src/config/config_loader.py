@@ -29,6 +29,8 @@ class ConfigLoader:
             ValueError: If configuration validation fails
         """
         system_config_path = Path(system_config_path)
+
+        # certain models may not have a model config
         model_config = None
         if model_config_path is not None:
             model_config_path = Path(model_config_path)
@@ -48,7 +50,6 @@ class ConfigLoader:
         except ValidationError as e:
             raise ValueError(f"System configuration validation for {system_config_path} failed:\n{e}")
 
-        # Only load model config if path is provided and file exists
         if model_config_path is not None and model_config_path.exists():
             try:
                 with open(model_config_path, 'r') as f:

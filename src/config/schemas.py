@@ -1,14 +1,18 @@
 from pydantic import BaseModel, Field, model_validator
-from typing import Self, Tuple, List, Optional
+from typing import Self, Tuple, List, Optional, Literal
 import torch
 
 
 class OFDMParams(BaseModel):
+    # ... means required (i.e. no default value)
+    # gt=0 means greater than 0
     num_scs: int = Field(..., gt=0, description="Number of sub-carriers")
     num_symbols: int = Field(..., gt=0, description="Number of OFDM symbols")
 
 
 class PilotParams(BaseModel):
+    # ... means required (i.e. no default value)
+    # gt=0 means greater than 0
     num_scs: int = Field(..., gt=0, description="Number of pilots across sub-carriers")
     num_symbols: int = Field(..., gt=0, description="Number of pilots across OFDM symbols")
 
@@ -17,7 +21,7 @@ class SystemConfig(BaseModel):
     ofdm: OFDMParams
     pilot: PilotParams
 
-    @model_validator(mode='after')
+    @model_validator(mode='after')  # validate after all fields are initialized
     def validate_pilot_constraints(self) -> Self:
         """Ensure pilot parameters don't exceed OFDM parameters."""
         if self.pilot.num_scs > self.ofdm.num_scs:
@@ -33,24 +37,61 @@ class SystemConfig(BaseModel):
             )
         return self
 
-    model_config = {"extra": "forbid"}
+    model_config = {"extra": "forbid"}  # forbid extra fields
 
 
 class ModelConfig(BaseModel):
+    model_type: Literal["fortitran", "adafortitran"] = Field(
+        default="fortitran",
+        description="Type of model (fortitran or adafortitran)"
+    )
     patch_size: Tuple[int, int] = Field(..., description="Patch size as (height, width)")
     num_layers: int = Field(..., gt=0, description="Number of transformer layers")
     model_dim: int = Field(..., gt=0, description="Model dimension")
     num_head: int = Field(..., gt=0, description="Number of attention heads")
-    activation: str = Field(default="gelu", description="Activation function")
-    dropout: float = Field(default=0.1, ge=0.0, le=1.0, description="Dropout rate")
+    activation: Literal["relu", "gelu"] = Field(
+        default="gelu", 
+        description="Activation function used within the transformer's FFN"
+    )
+    dropout: float = Field(default=0.1, ge=0.0, le=1.0, description="Dropout rate used within the transformer's FFN")
     max_seq_len: int = Field(default=512, gt=0, description="Maximum sequence length")
-    pos_encoding_type: str = Field(default="learnable", description="Position encoding type")
-    adaptive_token_length: int = Field(default=6, gt=0, description="Adaptive token length")
+    pos_encoding_type: Literal["learnable", "sinusoidal"] = Field(
+        default="learnable", 
+        description="Positional encoding type"
+    )
+    adaptive_token_length: Optional[int] = Field(
+        default=None, 
+        gt=0, 
+        description="Adaptive token length (required for AdaFortiTran)"
+    )
     channel_adaptivity_hidden_sizes: Optional[List[int]] = Field(
         default=None, 
-        description="Hidden sizes for channel adaptation layers"
+        description="Hidden sizes for channel adaptation layers (required for AdaFortiTran)"
     )
     device: str = Field(default="cpu", description="Device to use")
+
+    @model_validator(mode='after')
+    def validate_model_specific_requirements(self) -> Self:
+        """Validate model-specific configuration requirements."""
+        if self.model_type == "adafortitran":
+            if self.channel_adaptivity_hidden_sizes is None:
+                raise ValueError(
+                    "channel_adaptivity_hidden_sizes is required for AdaFortiTran model"
+                )
+            if self.adaptive_token_length is None:
+                raise ValueError(
+                    "adaptive_token_length is required for AdaFortiTran model"
+                )
+        
+        if self.model_type == "fortitran":
+            if self.channel_adaptivity_hidden_sizes is not None:
+                # Note: channel_adaptivity_hidden_sizes will be ignored for FortiTran
+                pass
+            if self.adaptive_token_length is not None:
+                # Note: adaptive_token_length will be ignored for FortiTran
+                pass
+        
+        return self
 
     @model_validator(mode='after')
     def validate_device(self) -> Self:
@@ -67,7 +108,6 @@ class ModelConfig(BaseModel):
                 self.device = 'cpu'
             return self
 
-        # Validate CPU
         if device_str == 'cpu':
             return self
 

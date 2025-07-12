@@ -1,3 +1,4 @@
+model_type: 'fortitran'
 patch_size: [3, 2]
 num_layers: 6
 model_dim: 128
@@ -6,4 +7,3 @@ activation: 'gelu'
 dropout: 0.1
 max_seq_len: 512
 pos_encoding_type: 'learnable'
-adaptive_token_length: 6

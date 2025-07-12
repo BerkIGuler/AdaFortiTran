@@ -44,7 +44,6 @@ def add_gitkeep_to_directories(root_path: str | Path):
     print(f"\nTotal .gitkeep files added: {gitkeep_count}")
 
 if __name__ == "__main__":
-    # Add .gitkeep to all subdirectories in the data folder
     data_path = Path("data")
     
     print(f"Adding .gitkeep files to subdirectories in {data_path.absolute()}")
