@@ -7,10 +7,11 @@ their types, default values, and validation rules to ensure proper configuration
 of training runs.
 """
 
-from dataclasses import dataclass
 from pathlib import Path
 import argparse
 from enum import Enum
+from pydantic import BaseModel, Field, model_validator
+from typing import Self
 
 
 class LossType(Enum):
@@ -20,8 +21,7 @@ class LossType(Enum):
     HUBER = "huber"
 
 
-@dataclass
-class TrainingArguments:
+class TrainingArguments(BaseModel):
     """Container for OFDM model training arguments.
 
     Stores, validates, and provides access to all parameters needed for
@@ -57,45 +57,34 @@ class TrainingArguments:
     """
 
     # Model Configuration
-    model_name: str
-    system_config_path: Path
-    model_config_path: Path
+    model_name: str = Field(..., description="Model type to train")
+    system_config_path: Path = Field(..., description="Path to OFDM system configuration file")
+    model_config_path: Path = Field(..., description="Path to model configuration file")
 
     # Dataset Paths
-    train_set: Path
-    val_set: Path
-    test_set: Path
+    train_set: Path = Field(..., description="Training dataset folder path")
+    val_set: Path = Field(..., description="Validation dataset folder path")
+    test_set: Path = Field(..., description="Test dataset folder path")
 
     # Experiment Settings
-    exp_id: str
-    python_log_level: str = "INFO"
-    tensorboard_log_dir: Path = Path("runs")
+    exp_id: str = Field(..., description="Experiment identifier for log folder naming")
+    python_log_level: str = Field(default="INFO", description="Logger level for python logging module")
+    tensorboard_log_dir: Path = Field(default=Path("runs"), description="Directory for tensorboard logs")
 
     # Training Hyperparameters
-    batch_size: int = 64
-    lr: float = 1e-3
-    max_epoch: int = 10
-    patience: int = 3
-    loss_type: LossType = LossType.MSE
-    return_type: str = "complex"
+    batch_size: int = Field(default=64, gt=0, description="Training batch size")
+    lr: float = Field(default=1e-3, gt=0, description="Initial learning rate")
+    max_epoch: int = Field(default=10, gt=0, description="Maximum number of training epochs")
+    patience: int = Field(default=3, gt=0, description="Early stopping patience (epochs)")
+    loss_type: LossType = Field(default=LossType.MSE, description="Loss function type")
+    return_type: str = Field(default="complex", description="Type of data to return from dataset")
 
     # Hardware & Evaluation
-    cuda: int = 0
-    test_every_n: int = 10
+    cuda: int = Field(default=0, ge=0, description="CUDA device index (0 for single GPU)")
+    test_every_n: int = Field(default=10, gt=0, description="Test model every N epochs")
 
-    def __post_init__(self) -> None:
-        """Validate arguments after initialization.
-
-        Runs multiple validation checks on the provided arguments to ensure
-        they are consistent and valid for training.
-
-        Raises:
-            ValueError: If any validation check fails
-        """
-        self._validate_paths()
-        self._validate_numeric_args()
-
-    def _validate_paths(self) -> None:
+    @model_validator(mode='after')
+    def validate_paths(self) -> Self:
         """Validate path-related arguments.
 
         Checks that the config files exist and have the correct extension.
@@ -115,33 +104,7 @@ class TrainingArguments:
         if not self.model_config_path.suffix == '.yaml':
             raise ValueError(f"Model config file must be a .yaml file: {self.model_config_path}")
 
-    def _validate_numeric_args(self) -> None:
-        """Validate numeric arguments.
-
-        Ensures that all numeric parameters have appropriate values:
-        - test_every_n, max_epoch, patience, batch_size, lr must be positive
-        - cuda must be non-negative
-
-        Raises:
-            ValueError: If any numeric argument has an invalid value
-        """
-        if self.test_every_n <= 0:
-            raise ValueError(f"test_every_n must be positive, got: {self.test_every_n}")
-
-        if self.max_epoch <= 0:
-            raise ValueError(f"max_epoch must be positive, got: {self.max_epoch}")
-
-        if self.patience <= 0:
-            raise ValueError(f"patience must be positive, got: {self.patience}")
-
-        if self.batch_size <= 0:
-            raise ValueError(f"batch_size must be positive, got: {self.batch_size}")
-
-        if self.cuda < 0:
-            raise ValueError(f"cuda must be non-negative, got: {self.cuda}")
-
-        if self.lr <= 0:
-            raise ValueError(f"lr must be positive, got: {self.lr}")
+        return self
 
 
 def parse_arguments() -> TrainingArguments:
@@ -278,7 +241,25 @@ def parse_arguments() -> TrainingArguments:
     args = parser.parse_args()
 
     # Convert loss_type string to enum
-    args.loss_type = LossType(args.loss_type)
+    loss_type = LossType(args.loss_type)
 
     # Create and validate TrainingArguments
-    return TrainingArguments(**vars(args))
+    return TrainingArguments(
+        model_name=args.model_name,
+        system_config_path=args.system_config_path,
+        model_config_path=args.model_config_path,
+        train_set=args.train_set,
+        val_set=args.val_set,
+        test_set=args.test_set,
+        exp_id=args.exp_id,
+        python_log_level=args.python_log_level,
+        tensorboard_log_dir=args.tensorboard_log_dir,
+        batch_size=args.batch_size,
+        lr=args.lr,
+        max_epoch=args.max_epoch,
+        patience=args.patience,
+        loss_type=loss_type,
+        return_type=args.return_type,
+        cuda=args.cuda,
+        test_every_n=args.test_every_n
+    )

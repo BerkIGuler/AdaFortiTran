@@ -5,6 +5,36 @@ Main entry point for OFDM channel estimation model training.
 This script provides the command-line interface for training OFDM channel estimation
 models. It loads configuration files, parses command-line arguments, and initiates
 the training process.
+
+Dataset Requirements:
+    The training script expects datasets with the following structure:
+    
+    Training/Validation Sets:
+        Directory containing .mat files with naming convention:
+        {file_number}_SNR-{snr}_DS-{delay_spread}_DOP-{doppler}_N-{pilot_freq}_{channel_type}.mat
+        
+        Example: 1_SNR-20_DS-50_DOP-500_N-3_TDL-A.mat
+    
+    Test Sets:
+        Directory with subdirectories for different test conditions:
+        test_set/
+        ├── DS_test_set/     # Delay Spread tests
+        │   ├── DS_50/
+        │   ├── DS_100/
+        │   └── ...
+        ├── SNR_test_set/    # SNR tests
+        │   ├── SNR_10/
+        │   ├── SNR_20/
+        │   └── ...
+        └── MDS_test_set/    # Multi-Doppler tests
+            ├── DOP_200/
+            ├── DOP_400/
+            └── ...
+    
+    Each .mat file must contain variable 'H' with shape [subcarriers, symbols, 3]:
+    - H[:, :, 0]: Ground truth channel
+    - H[:, :, 1]: LS channel estimate with zeros for non-pilot positions
+    - H[:, :, 2]: Unused (reserved)
 """
 
 import logging

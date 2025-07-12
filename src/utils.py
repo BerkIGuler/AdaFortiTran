@@ -70,19 +70,28 @@ def extract_values(file_name):
     Extract channel information from a file name.
 
     Parses file names with format:
-    '{number}_SNR-{snr}_DS-{delay_spread}_DOP-{doppler}_N-{pilot_freq}_{channel_type}.mat'
+    '{file_number}_SNR-{snr}_DS-{delay_spread}_DOP-{doppler}_N-{pilot_freq}_{channel_type}.mat'
+
+    Example:
+        For filename "1_SNR-20_DS-50_DOP-500_N-3_TDL-A.mat":
+        - file_number: 1
+        - snr: 20 (Signal-to-Noise Ratio in dB)
+        - delay_spread: 50 (Delay Spread)
+        - doppler: 500 (Maximum Doppler Shift)
+        - pilot_freq: 3 (Pilot placement frequency)
+        - channel_type: TDL-A (Channel model type)
 
     Args:
         file_name: The file name from which to extract channel information
 
     Returns:
         tuple: A tuple containing:
-            - file_number (torch.Tensor): The file number
-            - snr (torch.Tensor): Signal-to-noise ratio value
+            - file_number (torch.Tensor): The file number (sequential identifier)
+            - snr (torch.Tensor): Signal-to-noise ratio value in dB
             - delay_spread (torch.Tensor): Delay spread value
             - max_doppler_shift (torch.Tensor): Maximum Doppler shift value
             - pilot_placement_frequency (torch.Tensor): Pilot placement frequency
-            - channel_type (list): The channel type
+            - channel_type (list): The channel type (e.g., ['TDL-A'])
 
     Raises:
         ValueError: If the file name does not match the expected pattern

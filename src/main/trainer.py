@@ -163,15 +163,18 @@ class ModelTrainer:
         test_loaders = {
             "DS": get_test_dataloaders(
                 self.args.test_set / "DS_test_set",
-                {"pilot_dims": pilot_dims, "batch_size": self.args.batch_size}
+                pilot_dims,
+                self.args.batch_size
             ),
             "MDS": get_test_dataloaders(
                 self.args.test_set / "MDS_test_set",
-                {"pilot_dims": pilot_dims, "batch_size": self.args.batch_size}
+                pilot_dims,
+                self.args.batch_size
             ),
             "SNR": get_test_dataloaders(
                 self.args.test_set / "SNR_test_set",
-                {"pilot_dims": pilot_dims, "batch_size": self.args.batch_size}
+                pilot_dims,
+                self.args.batch_size
             ),
         }
         return train_loader, val_loader, test_loaders
