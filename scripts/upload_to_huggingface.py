@@ -275,7 +275,8 @@ def upload_to_huggingface(repo_path: Path, repo_name: str, private: bool = False
         
         # Get Hugging Face token for authentication
         try:
-            token = api.token
+            from huggingface_hub import HfFolder
+            token = HfFolder.get_token()
             if not token:
                 print("❌ No Hugging Face token found")
                 print("Please run: huggingface-cli login")
