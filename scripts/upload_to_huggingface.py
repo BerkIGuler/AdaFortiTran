@@ -273,8 +273,20 @@ def upload_to_huggingface(repo_path: Path, repo_name: str, private: bool = False
             # No changes to commit
             print("  No changes to commit (working tree clean)")
         
-        # Add Hugging Face remote
-        remote_url = f"https://huggingface.co/{repo_id}"
+        # Get Hugging Face token for authentication
+        try:
+            token = api.token
+            if not token:
+                print("❌ No Hugging Face token found")
+                print("Please run: huggingface-cli login")
+                return False
+        except Exception:
+            print("❌ Failed to get Hugging Face token")
+            print("Please run: huggingface-cli login")
+            return False
+        
+        # Add Hugging Face remote with token authentication
+        remote_url = f"https://{username}:{token}@huggingface.co/{repo_id}"
         
         # Check if origin remote already exists
         result = subprocess.run(["git", "remote", "get-url", "origin"], 
@@ -283,11 +295,11 @@ def upload_to_huggingface(repo_path: Path, repo_name: str, private: bool = False
         if result.returncode == 0:
             # Remote exists, update it
             subprocess.run(["git", "remote", "set-url", "origin", remote_url], check=True)
-            print(f"  Updated remote: {remote_url}")
+            print(f"  Updated remote: {repo_id}")
         else:
             # Remote doesn't exist, add it
             subprocess.run(["git", "remote", "add", "origin", remote_url], check=True)
-            print(f"  Added remote: {remote_url}")
+            print(f"  Added remote: {repo_id}")
         
         # Get current branch name
         result = subprocess.run(["git", "branch", "--show-current"], 
