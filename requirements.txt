@@ -1,5 +1,8 @@
 torch
 pydantic
-yaml
+pyyaml
 scipy
 tqdm
+matplotlib
+prettytable
+tensorboard

@@ -180,24 +180,7 @@ def concat_complex_channel(channel_matrix):
     return cat_channel_m
 
 
-def inverse_concat_complex_channel(channel_matrix: torch.Tensor) -> torch.Tensor:
-    """
-    Reconstruct complex channel matrix from concatenated real matrix.
 
-    Reverses the operation performed by concat_complex_channel by
-    splitting the tensor and combining the parts into a complex tensor.
-
-    Args:
-        channel_matrix: Real-valued matrix of shape (B, F, 2*T)
-
-    Returns:
-        Complex matrix of shape (B, F, T)
-    """
-    split_idx = channel_matrix.shape[-1] // 2
-    return torch.complex(
-        channel_matrix[:, :split_idx],
-        channel_matrix[:, split_idx:]
-    )
 
 
 def get_test_stats_plot(x_name, stats, methods, show=False):
