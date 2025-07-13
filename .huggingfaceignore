@@ -11,8 +11,7 @@ logs/
 runs/
 checkpoints/
 
-# Ignore temporary files
-__pycache__/
+# Ignore temporary files (only if not tracked by git)
 *.pyc
 *.pyo
 *.pyd
