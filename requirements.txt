@@ -6,3 +6,4 @@ tqdm
 matplotlib
 prettytable
 tensorboard
+huggingface_hub
