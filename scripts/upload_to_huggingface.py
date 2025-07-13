@@ -267,8 +267,19 @@ def upload_to_huggingface(repo_path: Path, repo_name: str, private: bool = False
         
         # Add Hugging Face remote
         remote_url = f"https://huggingface.co/{repo_id}"
-        subprocess.run(["git", "remote", "add", "origin", remote_url], check=True)
-        print(f"  Added remote: {remote_url}")
+        
+        # Check if origin remote already exists
+        result = subprocess.run(["git", "remote", "get-url", "origin"], 
+                              capture_output=True, text=True, check=False)
+        
+        if result.returncode == 0:
+            # Remote exists, update it
+            subprocess.run(["git", "remote", "set-url", "origin", remote_url], check=True)
+            print(f"  Updated remote: {remote_url}")
+        else:
+            # Remote doesn't exist, add it
+            subprocess.run(["git", "remote", "add", "origin", remote_url], check=True)
+            print(f"  Added remote: {remote_url}")
         
         # Push to Hugging Face
         subprocess.run(["git", "push", "-u", "origin", "main"], check=True)
