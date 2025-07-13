@@ -281,9 +281,14 @@ def upload_to_huggingface(repo_path: Path, repo_name: str, private: bool = False
             subprocess.run(["git", "remote", "add", "origin", remote_url], check=True)
             print(f"  Added remote: {remote_url}")
         
-        # Push to Hugging Face
-        subprocess.run(["git", "push", "-u", "origin", "main"], check=True)
-        print("  Pushed to Hugging Face")
+        # Get current branch name
+        result = subprocess.run(["git", "branch", "--show-current"], 
+                              capture_output=True, text=True, check=True)
+        current_branch = result.stdout.strip()
+        
+        # Push to Hugging Face using current branch
+        subprocess.run(["git", "push", "-u", "origin", current_branch], check=True)
+        print(f"  Pushed to Hugging Face (branch: {current_branch})")
         
         print(f"\n🎉 Successfully uploaded to: https://huggingface.co/{repo_id}")
         return True
