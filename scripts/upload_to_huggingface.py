@@ -261,9 +261,17 @@ def upload_to_huggingface(repo_path: Path, repo_name: str, private: bool = False
         subprocess.run(["git", "add", "."], check=True)
         print("  Added files to git")
         
-        # Commit
-        subprocess.run(["git", "commit", "-m", "Initial commit for Hugging Face"], check=True)
-        print("  Committed changes")
+        # Check if there are changes to commit
+        result = subprocess.run(["git", "status", "--porcelain"], 
+                              capture_output=True, text=True, check=True)
+        
+        if result.stdout.strip():
+            # There are changes to commit
+            subprocess.run(["git", "commit", "-m", "Initial commit for Hugging Face"], check=True)
+            print("  Committed changes")
+        else:
+            # No changes to commit
+            print("  No changes to commit (working tree clean)")
         
         # Add Hugging Face remote
         remote_url = f"https://huggingface.co/{repo_id}"
