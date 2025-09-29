@@ -4,7 +4,7 @@
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-1.8+-red.svg)](https://pytorch.org/)
 
-Official implementation of [AdaFortiTran: An Adaptive Transformer Model for Robust OFDM Channel Estimation](https://arxiv.org/abs/2505.09076) accepted at ICC 2025, Montreal, Canada.
+Official implementation of [AdaFortiTran: An Adaptive Transformer Model for Robust OFDM Channel Estimation](https://ieeexplore.ieee.org/document/11160810) accepted at ICC 2025, Montreal, Canada.
 
 ## 📖 Overview
 
@@ -21,9 +21,9 @@ AdaFortiTran is a novel adaptive transformer-based model for OFDM channel estima
 
 The project implements three model variants:
 
-1. **Linear Estimator**: Simple learned linear transformation baseline
-2. **FortiTran**: Fixed transformer-based channel estimator
-3. **AdaFortiTran**: Adaptive transformer with channel condition awareness
+1. **Linear Estimator**: Simple learned linear estimator baseline
+2. **FortiTran**: Base transformer-based channel estimator
+3. **AdaFortiTran**: Adaptive version of FortiTran with channel condition awareness
 
 ### Model Comparison
 
@@ -46,11 +46,6 @@ The project implements three model variants:
 2. **Install dependencies**:
    ```bash
    pip install -r requirements.txt
-   ```
-
-3. **Verify installation**:
-   ```bash
-   python -c "import torch; print(f'PyTorch {torch.__version__}')"
    ```
 
 ### Basic Training
@@ -227,7 +222,7 @@ Example: `1_SNR-20_DS-50_DOP-500_N-3_TDL-A.mat`
 
 ### Data Format
 
-Each `.mat` file must contain variable `H` with shape `[subcarriers, symbols, 3]`:
+Each `.mat` file must contain a variable `H` with shape `[subcarriers, symbols, 3]`:
 - `H[:, :, 0]`: Ground truth channel (complex values)
 - `H[:, :, 1]`: LS channel estimate with zeros for non-pilot positions
 - `H[:, :, 2]`: Reserved for future use
@@ -284,27 +279,6 @@ python src/main.py \
     --test_set data/test \
     --exp_id resumed_experiment \
     --resume_from_checkpoint runs/adafortitran_experiment/best/checkpoint_epoch_50.pt
-```
-
-### Hyperparameter Tuning
-
-```bash
-python src/main.py \
-    --model_name adafortitran \
-    --system_config_path config/system_config.yaml \
-    --model_config_path config/adafortitran.yaml \
-    --train_set data/train \
-    --val_set data/val \
-    --test_set data/test \
-    --exp_id hyperparameter_tuning \
-    --batch_size 64 \
-    --lr 1e-3 \
-    --max_epoch 50 \
-    --patience 5 \
-    --weight_decay 1e-5 \
-    --gradient_clip_val 0.5 \
-    --use_mixed_precision \
-    --test_every_n 5
 ```
 
 ## 📈 Monitoring and Logging
@@ -389,46 +363,21 @@ class CustomEstimator(BaseFortiTranEstimator):
         # Add custom components
 ```
 
-## 🐛 Troubleshooting
-
-### Common Issues
-
-**CUDA Out of Memory**:
-- Reduce batch size: `--batch_size 32`
-- Enable mixed precision: `--use_mixed_precision`
-- Reduce number of workers: `--num_workers 2`
-
-**Slow Training**:
-- Increase number of workers: `--num_workers 8`
-- Enable pin memory: `--pin_memory`
-- Use mixed precision: `--use_mixed_precision`
-
-**Poor Convergence**:
-- Adjust learning rate: `--lr 1e-4`
-- Add gradient clipping: `--gradient_clip_val 1.0`
-- Increase patience: `--patience 10`
-
-### Getting Help
-
-1. Check the logs in `logs/training_{exp_id}.log`
-2. Verify dataset format matches requirements
-3. Ensure all dependencies are installed correctly
-4. Check TensorBoard for training curves
-
 ## 📚 Citation
 
-If you use this code in your research, please cite:
+If you use part of this code in your research, please cite:
 
 ```bibtex
-@misc{guler2025adafortitranadaptivetransformermodel,
-      title={AdaFortiTran: An Adaptive Transformer Model for Robust OFDM Channel Estimation}, 
-      author={Berkay Guler and Hamid Jafarkhani},
-      year={2025},
-      eprint={2505.09076},
-      archivePrefix={arXiv},
-      primaryClass={cs.LG},
-      url={https://arxiv.org/abs/2505.09076}, 
-}
+@inproceedings{GulJaf2025,
+  author={Guler, Berkay and Jafarkhani, Hamid},
+  booktitle={ICC 2025 - IEEE International Conference on Communications}, 
+  title={AdaFortiTran: An Adaptive Transformer Model for Robust OFDM Channel Estimation}, 
+  year={2025},
+  volume={},
+  number={},
+  pages={3797-3802},
+  keywords={Deep learning;Doppler shift;Wireless communication;Adaptation models;OFDM;Channel estimation;Computer architecture;Transformers;Delays;Signal to noise ratio;channel estimation;OFDM;Transformer;Attention;Deep learning},
+  doi={10.1109/ICC52391.2025.11160810}}
 ```
 
 ## 📄 License
