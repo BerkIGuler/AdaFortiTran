@@ -6,34 +6,17 @@
 
 Official implementation of [AdaFortiTran: An Adaptive Transformer Model for Robust OFDM Channel Estimation](https://ieeexplore.ieee.org/document/11160810) accepted at ICC 2025, Montreal, Canada.
 
-## 📖 Overview
+## Overview
 
-AdaFortiTran is a novel adaptive transformer-based model for OFDM channel estimation that dynamically adapts to varying channel conditions (SNR, delay spread, Doppler shift). The model combines the power of transformer architectures with channel-aware adaptation mechanisms to achieve robust performance across diverse wireless environments.
+AdaFortiTran is a novel adaptive transformer-based model for SISO OFDM channel estimation that dynamically adapts to channel conditions (e.g. SNR, delay spread, Doppler shift). The model combines a custom-designed deep upsampling network with multi head self attention (MHSA) and convolutional operators and a channel-aware adaptation mechanism embedded into MHSA calculation to achieve competitive performance across diverse wireless environments.
 
-### Key Features
-- **🔄 Adaptive Architecture**: Dynamically adapts to channel conditions using meta-information
-- **⚡ High Performance**: State-of-the-art results on OFDM channel estimation tasks
-- **🧠 Transformer-Based**: Leverages attention mechanisms for long-range dependencies
-- **🎯 Robust**: Maintains performance across varying SNR, delay spread, and Doppler conditions
-- **🚀 Production Ready**: Comprehensive training pipeline with advanced features
+## Architecture
 
-## 🏗️ Architecture
+This repository implements three models:
 
-The project implements three model variants:
-
-1. **Linear Estimator**: Simple learned linear estimator baseline
-2. **FortiTran**: Base transformer-based channel estimator
+1. **Linear Estimator**: Simple learned linear estimator baseline (single fully-connected layer without non-linear activations)
+2. **FortiTran**: Base channel estimator based on MHSA and convolutional operators w/o channel adaptivity
 3. **AdaFortiTran**: Adaptive version of FortiTran with channel condition awareness
-
-### Model Comparison
-
-| Model | Channel Adaptation | Complexity | Performance |
-|-------|-------------------|------------|-------------|
-| Linear | ❌ | Low | Baseline |
-| FortiTran | ❌ | Medium | Good |
-| AdaFortiTran | ✅ | High | **Best** |
-
-## 🚀 Quick Start
 
 ### Installation
 
@@ -42,18 +25,25 @@ The project implements three model variants:
    git clone https://github.com/your-username/AdaFortiTran.git
    cd AdaFortiTran
    ```
+2. **Make sure to have CUDA properly installed**: If you have a CUDA-compatible GPU, you should install and configure the necessary drivers/kernels for accelerated computing on GPU(s).  
 
-2. **Install dependencies**:
+3. **Install dependencies**:
    ```bash
    pip install -r requirements.txt
    ```
 
-### Basic Training
+*Note:* One simple way to see if CUDA is accessible through PyTorch is to run the following python script.
+```
+import torch
+print(torch.cuda.is_available())
+```
 
-Train an AdaFortiTran model with default settings:
+### Sample Training scripts
+
+*To train an AdaFortiTran model with default settings:*
 
 ```bash
-python src/main.py \
+python3 src/main.py \
     --model_name adafortitran \
     --system_config_path config/system_config.yaml \
     --model_config_path config/adafortitran.yaml \
@@ -63,9 +53,7 @@ python src/main.py \
     --exp_id my_experiment
 ```
 
-### Advanced Training
-
-Use all available features for optimal performance:
+*To train an AdaFortiTran model with maximal configurability:*
 
 ```bash
 python src/main.py \
@@ -88,30 +76,31 @@ python src/main.py \
     --test_every_n 5
 ```
 
-## 📁 Project Structure
-
+## Project Structure
 ```
 AdaFortiTran/
-├── config/                     # Configuration files
-│   ├── system_config.yaml     # OFDM system parameters
-│   ├── adafortitran.yaml      # AdaFortiTran model config
-│   ├── fortitran.yaml         # FortiTran model config
-│   └── linear.yaml            # Linear model config
+├── config/                    # Configuration files
+│   ├── system_config.yaml     # configurable OFDM system parameters
+│   ├── adafortitran.yaml      # default AdaFortiTran model config
+│   ├── fortitran.yaml         # default FortiTran model config
 ├── data/                      # Dataset directory
 │   ├── train/                 # Training data
 │   ├── val/                   # Validation data
-│   └── test/                  # Test data (DS, MDS, SNR sets)
+│   └── test/                  # Test data organized by evaluation scenarios (see below for more details on that)
+│       ├── DS_test_set/       # Delay Spread robustness tests (7 conditions)  
+│       ├── MDS_test_set/      # Max. Doppler Shift tests (7 conditions)
+│       └── SNR_test_set/      # Signal-to-Noise Ratio tests (7 conditions)
 ├── src/                       # Source code
 │   ├── main/                  # Training pipeline
-│   │   ├── trainer.py         # Enhanced ModelTrainer
+│   │   ├── trainer.py         # Unified model training
 │   │   └── parser.py          # Command-line argument parser
 │   ├── models/                # Model implementations
-│   │   ├── adafortitran.py    # AdaFortiTran model
+│   │   ├── adafortitran.py    # AdaFortiTran model (extends FortiTran)
 │   │   ├── fortitran.py       # FortiTran model
 │   │   ├── linear.py          # Linear model
 │   │   └── blocks/            # Model building blocks
 │   ├── data/                  # Data loading
-│   │   └── dataset.py         # Dataset and DataLoader classes
+│   │   └── dataset.py         # Data handling/processing
 │   ├── config/                # Configuration management
 │   │   ├── config_loader.py   # YAML configuration loader
 │   │   └── schemas.py         # Pydantic validation schemas
@@ -120,7 +109,7 @@ AdaFortiTran/
 ├── README.md                  # This file
 ```
 
-## ⚙️ Configuration
+## Configuration
 
 ### System Configuration (`config/system_config.yaml`)
 
@@ -136,27 +125,29 @@ pilot:
   num_symbols: 2    # Number of pilot symbols
 ```
 
+*Note:* You should update those parameters based on your dataset.
+
 ### Model Configuration (`config/adafortitran.yaml`)
 
-Defines model architecture parameters:
+Defines the AdaFortiTran architecture parameters:
 
 ```yaml
-model_type: 'adafortitran'
+model_type: 'adafortitran'            # should not be changed
 patch_size: [3, 2]                    # Patch dimensions
-num_layers: 6                         # Transformer layers
-model_dim: 128                        # Model dimension
-num_head: 4                           # Attention heads
-activation: 'gelu'                    # Activation function
-dropout: 0.1                          # Dropout rate
-max_seq_len: 512                      # Maximum sequence length
-pos_encoding_type: 'learnable'        # Positional encoding
-channel_adaptivity_hidden_sizes: [7, 42, 560]  # Adaptation layers
-adaptive_token_length: 6              # Adaptive token length
+num_layers: 6                         # number of transformer layers
+model_dim: 128                        # model dimension (i.e. the dimension after the input projection is applied to each patch)
+num_head: 4                           # Number of self-attention heads
+activation: 'gelu'                    # Activation function (used within the MLP block of the transformer encoder)
+dropout: 0.1                          # Dropout rate (for MLP block of the transformer encoder)
+max_seq_len: 512                      # Maximum sequence length (should be >= number of patches)
+pos_encoding_type: 'learnable'        # Positional encoding type
+channel_adaptivity_hidden_sizes: [7, 42, 560]  # hidden sizes of the MLP used for adaptation to channel condition
+adaptive_token_length: 6              # Adaptive token vector (concatenated with each flattened patch) length
 ```
 
-## 🎯 Training Features
+## Training Features
 
-### Advanced Training Options
+### Training Options
 
 | Feature | Description | Default |
 |---------|-------------|---------|
@@ -177,14 +168,7 @@ The training pipeline includes an extensible callback system:
 - **Checkpoint Management**: Flexible checkpoint saving strategies
 - **Custom Callbacks**: Easy to add new logging or monitoring systems
 
-### Performance Optimizations
-
-- **Mixed Precision Training**: Faster training on modern GPUs
-- **Optimized Data Loading**: Configurable workers and memory pinning
-- **Gradient Clipping**: Stable training with configurable clipping
-- **Early Stopping**: Automatic training termination on plateau
-
-## 📊 Dataset Format
+## Dataset Format
 
 ### Expected File Structure
 
@@ -197,19 +181,43 @@ data/
 ├── val/
 │   └── ...
 └── test/
-    ├── DS_test_set/          # Delay Spread tests
-    │   ├── DS_50/
-    │   ├── DS_100/
-    │   └── ...
-    ├── SNR_test_set/         # SNR tests
-    │   ├── SNR_10/
-    │   ├── SNR_20/
-    │   └── ...
-    └── MDS_test_set/         # Multi-Doppler tests
-        ├── DOP_200/
-        ├── DOP_400/
-        └── ...
+    ├── DS_test_set/          # Delay Spread robustness evaluation
+    │   ├── DS_50/            # 50 ns delay spread
+    │   ├── DS_100/           # 100 ns delay spread  
+    │   ├── DS_150/           # 150 ns delay spread
+    │   ├── DS_200/           # 200 ns delay spread
+    │   ├── DS_250/           # 250 ns delay spread
+    │   ├── DS_300/           # 300 ns delay spread
+    │   └── DS_350/           # 350 ns delay spread
+    ├── SNR_test_set/         # Signal-to-Noise Ratio robustness evaluation
+    │   ├── SNR_0/            # 0 dB SNR
+    │   ├── SNR_5/            # 5 dB SNR
+    │   ├── SNR_10/           # 10 dB SNR
+    │   ├── SNR_15/           # 15 dB SNR
+    │   ├── SNR_20/           # 20 dB SNR
+    │   ├── SNR_25/           # 25 dB SNR
+    │   └── SNR_30/           # 30 dB SNR
+    └── MDS_test_set/         # Multi-Doppler Shift robustness evaluation
+        ├── DOP_200/          # 200 Hz Doppler frequency
+        ├── DOP_400/          # 400 Hz Doppler frequency
+        ├── DOP_600/          # 600 Hz Doppler frequency
+        ├── DOP_800/          # 800 Hz Doppler frequency
+        ├── DOP_1000/         # 1000 Hz Doppler frequency
+        ├── DOP_1200/         # 1200 Hz Doppler frequency
+        └── DOP_1400/         # 1400 Hz Doppler frequency
 ```
+
+### Test Set Organization
+
+Each test set evaluates model robustness under specific channel conditions:
+
+- **DS_test_set (Delay Spread)**: Evaluates performance across different multipath delay spreads (50-350 ns), simulating various indoor/outdoor propagation environments from small rooms to large urban areas.
+
+- **SNR_test_set (Signal-to-Noise Ratio)**: Tests model resilience to noise across SNR levels from 0-30 dB, covering challenging low-SNR scenarios to high-quality channel conditions.
+
+- **MDS_test_set (Multi-Doppler Shift)**: Assesses adaptation to mobility-induced Doppler shifts (200-1400 Hz), representing scenarios from pedestrian movement to high-speed vehicular communication.
+
+Each subdirectory contains `.mat` files following the same naming convention and data format as training/validation sets, but with fixed channel conditions corresponding to the test scenario.
 
 ### File Naming Convention
 
@@ -308,10 +316,13 @@ Training logs are saved to:
 
 ### Automatic Testing
 
-The training pipeline automatically evaluates models on:
-- **DS (Delay Spread)**: Varying delay spread conditions
-- **SNR**: Different signal-to-noise ratios
-- **MDS (Multi-Doppler)**: Various Doppler shift scenarios
+The training pipeline automatically evaluates models across comprehensive test scenarios:
+
+- **DS (Delay Spread)**: 7 conditions from 50-350 ns testing multipath robustness
+- **SNR (Signal-to-Noise Ratio)**: 7 levels from 0-30 dB testing noise resilience  
+- **MDS (Multi-Doppler Shift)**: 7 frequencies from 200-1400 Hz testing mobility adaptation
+
+Results are logged per test condition, enabling detailed robustness analysis across different wireless environments.
 
 ### Manual Evaluation
 
