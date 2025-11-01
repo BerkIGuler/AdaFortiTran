@@ -19,7 +19,7 @@ from pathlib import Path
 from abc import ABC, abstractmethod
 
 from .parser import TrainingArguments
-from src.data.dataset import MatDataset, get_test_dataloaders
+from src.data import MatDataset, get_test_dataloaders
 from src.models import LinearEstimator, AdaFortiTranEstimator, FortiTranEstimator
 from src.utils import (
     EarlyStopping,
@@ -472,11 +472,9 @@ class ModelTrainer:
 
     def _get_dataloaders(self) -> Tuple[DataLoader, DataLoader, dict[str, list[tuple[str, DataLoader]]]]:
         """Get training, validation, and test dataloaders."""
-        pilot_dims = [self.system_config.pilot.num_scs, self.system_config.pilot.num_symbols]
-        
         # Training and validation dataloaders
-        train_dataset = MatDataset(self.args.train_set, pilot_dims)
-        val_dataset = MatDataset(self.args.val_set, pilot_dims)
+        train_dataset = MatDataset(self.args.train_set, self.system_config.pilot)
+        val_dataset = MatDataset(self.args.val_set, self.system_config.pilot)
         
         train_loader = DataLoader(
             train_dataset,
@@ -498,17 +496,17 @@ class ModelTrainer:
         test_loaders = {
             "DS": get_test_dataloaders(
                 self.args.test_set / "DS_test_set",
-                pilot_dims,
+                self.system_config.pilot,
                 self.args.batch_size
             ),
             "MDS": get_test_dataloaders(
                 self.args.test_set / "MDS_test_set",
-                pilot_dims,
+                self.system_config.pilot,
                 self.args.batch_size
             ),
             "SNR": get_test_dataloaders(
                 self.args.test_set / "SNR_test_set",
-                pilot_dims,
+                self.system_config.pilot,
                 self.args.batch_size
             ),
         }

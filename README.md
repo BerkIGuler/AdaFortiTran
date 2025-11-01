@@ -230,10 +230,9 @@ Example: `1_SNR-20_DS-50_DOP-500_N-3_TDL-A.mat`
 
 ### Data Format
 
-Each `.mat` file must contain a variable `H` with shape `[# OFDM subcarriers, # OFDM symbols, 3]`:
+Each `.mat` file must contain a variable `H` with shape `[# OFDM subcarriers, # OFDM symbols, 2]`:
 - `H[:, :, 0]`: complex valued ground truth channel matrix
 - `H[:, :, 1]`: least square estimate of the channel at pilot positions and zeros for non-pilot positions
-- `H[:, :, 2]`: Reserved for future use
 
 ## Usage Examples
 

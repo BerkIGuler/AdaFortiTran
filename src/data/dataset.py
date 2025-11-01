@@ -1,4 +1,4 @@
-"""Module for loading and processing .mat files containing channel estimates for PyTorch.
+"""Module for loading and processing .mat files containing channel matrices for PyTorch.
 
 This module expects .mat files with a specific naming convention and internal structure:
 
@@ -8,19 +8,17 @@ File Naming Convention:
     Example: 1_SNR-20_DS-50_DOP-500_N-3_TDL-A.mat
     - file_number: Sequential file identifier
     - SNR: Signal-to-Noise Ratio in dB
-    - DS: Delay Spread
-    - DOP: Maximum Doppler Shift
-    - N: Pilot placement frequency
-    - channel_type: Channel model type (e.g., TDL-A)
+    - DS: Delay Spread in nanoseconds
+    - DOP: Maximum Doppler Shift in Hz
+    - pilot_freq: Pilot placement frequency (i.e. every Nth subcarrier is a pilot)
+    - channel_type: Channel model type (e.g., TDL-A, TDL-B, etc.)
 
 File Content Structure:
-    Each .mat file must contain a variable 'H' with shape [subcarriers, symbols, 3]:
-    - H[:, :, 0]: Ground truth channel (complex values)
-    - H[:, :, 1]: LS channel estimate with zeros for non-pilot positions
-    - H[:, :, 2]: Unused (reserved for future use)
+    Each .mat file must contain a variable 'H' with shape [subcarriers, symbols, 2]:
+    - H[:, :, 0]: Complex valued ground truth channel
+    - H[:, :, 1]: Complex valued least squares (LS) channel estimate at pilot positions with zeros at non-pilot positions (used as input to models)
 
-The dataset extracts pilot values from the LS estimates and provides metadata from the filename
-for adaptive channel estimation models.
+The dataset extracts pilot values from the LS estimates and provides metadata from the filename for adaptive channel estimation models.
 """
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple, Union
@@ -28,36 +26,15 @@ from typing import Callable, List, Optional, Tuple, Union
 import scipy.io as sio
 import torch
 from torch.utils.data import Dataset, DataLoader
-from pydantic import BaseModel, Field
 
+from src.config.schemas import PilotParams
 from src.utils import extract_values
 
 __all__ = ['MatDataset', 'get_test_dataloaders']
 
 
-class PilotDimensions(BaseModel):
-    """Container for pilot signal dimensions.
-
-    Stores and validates the dimensions of pilot signals used in channel estimation.
-
-    Attributes:
-        num_subcarriers: Number of subcarriers in the pilot signal
-        num_ofdm_symbols: Number of OFDM symbols in the pilot signal
-    """
-    num_subcarriers: int = Field(..., gt=0, description="Number of subcarriers in the pilot signal")
-    num_ofdm_symbols: int = Field(..., gt=0, description="Number of OFDM symbols in the pilot signal")
-
-    def as_tuple(self) -> Tuple[int, int]:
-        """Return dimensions as a tuple.
-
-        Returns:
-            Tuple of (num_subcarriers, num_ofdm_symbols)
-        """
-        return self.num_subcarriers, self.num_ofdm_symbols
-
-
 class MatDataset(Dataset):
-    """Dataset for loading and formatting .mat files containing channel estimates.
+    """Dataset for loading and formatting .mat files containing channel matrices.
 
     Processes .mat files containing channel estimation data and converts them into
     PyTorch complex tensors for channel estimation tasks.
@@ -65,14 +42,13 @@ class MatDataset(Dataset):
     Expected File Format:
         - Files must be named according to the pattern: 
           {file_number}_SNR-{snr}_DS-{delay_spread}_DOP-{doppler}_N-{pilot_freq}_{channel_type}.mat
-        - Each .mat file must contain a variable 'H' with shape [subcarriers, symbols, 3]
-        - H[:, :, 0]: Ground truth channel (complex values)
-        - H[:, :, 1]: LS channel estimate with zeros for non-pilot positions
-        - H[:, :, 2]: Bilinear interpolated LS channel estimate
+        - Each .mat file must contain a variable 'H' with shape [subcarriers, symbols, 2]
+        - H[:, :, 0]: complex valued ground truth channel matrix
+        - H[:, :, 1]: complex valued least-squares (LS) channel estimate at pilot positions with zeros at non-pilot positions
 
     Returns:
         For each sample, returns a tuple of:
-        - Pilot LS channel estimate (complex tensor, shape [pilot_subcarriers, pilot_symbols])
+        - LS channel estimate at pilot positions(complex tensor, shape [pilot_subcarriers, pilot_symbols])
         - Ground truth channel estimate (complex tensor, shape [ofdm_subcarriers, ofdm_symbols])
         - Metadata tuple: (file_number, snr, delay_spread, doppler, pilot_freq, channel_type)
     """
@@ -80,22 +56,25 @@ class MatDataset(Dataset):
     def __init__(
             self,
             data_dir: Union[str, Path],
-            pilot_dims: List[int],
+            pilot_params: PilotParams,
             transform: Optional[Callable] = None
     ) -> None:
         """Initialize the MatDataset.
 
         Args:
             data_dir: Path to the directory containing the dataset (should contain .mat files).
-            pilot_dims: Dimensions of pilot data as [num_subcarriers, num_ofdm_symbols].
+            pilot_params: PilotParams object containing validated pilot dimensions.
             transform: Optional transformation to apply to samples.
 
         Raises:
             FileNotFoundError: If data_dir doesn't exist.
             ValueError: If no .mat files are found in data_dir.
         """
-        self.data_dir = Path(data_dir)
-        self.pilot_dims = PilotDimensions(num_subcarriers=pilot_dims[0], num_ofdm_symbols=pilot_dims[1])
+        if isinstance(data_dir, str):
+            data_dir = Path(data_dir)
+        
+        self.data_dir = data_dir
+        self.pilot_params = pilot_params
         self.transform = transform
 
         if not self.data_dir.exists():
@@ -117,16 +96,17 @@ class MatDataset(Dataset):
             self,
             mat_data: dict
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Process channel data and extract pilot values from LS estimates.
+        """Process channel data and extract pilot values from sparse (pilot positions only) LS-estimated channel matrix.
 
-        Extracts pilot values from LS channel estimates with zero entries removed,
+        Extracts pilot values (non-zero entries) from LS channel estimates,
         returning complex-valued tensors for both estimate and ground truth.
 
         Args:
-            mat_data: Loaded .mat file data containing 'H' variable
+            mat_data: Loaded .mat file data containing 'H' variable with shape [subcarriers, symbols, 3]
 
         Returns:
-            Tuple of (pilot LS estimate, ground truth channel)
+            Tuple of (pilot LS estimate at pilot positions (complex tensor, shape [pilot_scs, pilot_symbols]),
+                      ground truth channel matrix (complex tensor, shape [ofdm_scs, ofdm_symbols]))
 
         Raises:
             ValueError: If the data format is unexpected or processing fails
@@ -135,25 +115,28 @@ class MatDataset(Dataset):
             # Extract ground truth channel
             h_ideal = torch.tensor(mat_data['H'][:, :, 0], dtype=torch.cfloat)
             
-            # Extract LS channel estimate with zero entries
+            # LS channel estimate at pilot positions with zeros at non-pilot positions
             hzero_ls = torch.tensor(mat_data['H'][:, :, 1], dtype=torch.cfloat)
 
-            # Remove zero entries, keep only pilot values
+            # Remove zero entries, keep only channel at pilot values
             zero_complex = torch.complex(torch.tensor(0.0), torch.tensor(0.0))
+            # Boolean masking extracts in row-major order: all OFDM symbols for subcarrier 0, then subcarrier 1, etc.
+            # Extracted order: [sc0_sym0, sc0_sym1, ..., sc0_symN, sc1_sym0, sc1_sym1, ..., sc1_symN, ...]
             hp_ls = hzero_ls[hzero_ls != zero_complex]
 
-            # Validate expected number of pilot values
-            expected_pilots = self.pilot_dims.num_subcarriers * self.pilot_dims.num_ofdm_symbols
+            # Validate expected number of pilot values (number of non-zero entries)
+            expected_pilots = self.pilot_params.num_scs * self.pilot_params.num_symbols
             if hp_ls.numel() != expected_pilots:
                 raise ValueError(
                     f"Expected {expected_pilots} pilot values, got {hp_ls.numel()}"
                 )
 
             # Reshape to pilot grid dimensions [subcarriers, symbols]
-            hp_ls = hp_ls.unsqueeze(dim=1).view(
-                self.pilot_dims.num_ofdm_symbols,
-                self.pilot_dims.num_subcarriers
-            ).t()
+            # Row-major extraction matches [subcarriers x symbols] layout directly
+            hp_ls = hp_ls.view(
+                self.pilot_params.num_scs,
+                self.pilot_params.num_symbols
+            )
 
             return hp_ls, h_ideal
 
@@ -185,7 +168,7 @@ class MatDataset(Dataset):
 
         try:
             mat_data = sio.loadmat(self.file_list[idx])
-            if 'H' not in mat_data or mat_data['H'].shape[-1] < 3:
+            if 'H' not in mat_data or mat_data['H'].shape[-1] < 2:
                 raise ValueError("Invalid .mat file format: missing required data")
 
             # Process channel data to extract pilot estimates
@@ -209,7 +192,7 @@ class MatDataset(Dataset):
 
 def get_test_dataloaders(
         dataset_dir: Union[str, Path],
-        pilot_dims: List[int],
+        pilot_params: PilotParams,
         batch_size: int
 ) -> List[Tuple[str, DataLoader]]:
     """Create DataLoaders for each subdirectory in the dataset directory.
@@ -237,7 +220,7 @@ def get_test_dataloaders(
 
     Args:
         dataset_dir: Path to main directory containing dataset subdirectories
-        pilot_dims: List of [num_subcarriers, num_ofdm_symbols] for pilot dimensions
+        pilot_params: PilotParams object containing validated pilot dimensions
         batch_size: Number of samples per batch
 
     Returns:
@@ -247,7 +230,9 @@ def get_test_dataloaders(
         FileNotFoundError: If dataset_dir doesn't exist
         ValueError: If no valid subdirectories are found
     """
-    dataset_dir = Path(dataset_dir)
+    if isinstance(dataset_dir, str):
+        dataset_dir = Path(dataset_dir)
+    
     if not dataset_dir.exists():
         raise FileNotFoundError(f"Dataset directory not found: {dataset_dir}")
 
@@ -260,7 +245,7 @@ def get_test_dataloaders(
             subdir.name,
             MatDataset(
                 subdir,
-                pilot_dims
+                pilot_params
             )
         )
         for subdir in subdirs
