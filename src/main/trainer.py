@@ -6,7 +6,7 @@ for OFDM channel estimation tasks. It includes a ModelTrainer class that handles
 the complete training workflow, including model initialization, data loading,
 training loop management, evaluation, and result logging.
 """
-
+from __future__ import annotations
 import torch
 from torch import nn, optim
 from torch.utils.data import DataLoader
@@ -88,7 +88,7 @@ class CheckpointCallback(Callback):
         self.best_val_loss = float('inf')
         self.trainer = None
         
-    def set_trainer(self, trainer: 'ModelTrainer') -> None:
+    def set_trainer(self, trainer: ModelTrainer) -> None:
         """Set the trainer reference."""
         self.trainer = trainer
         
@@ -161,25 +161,36 @@ class TrainingLoop:
     def _compute_loss(self, estimated_channel: torch.Tensor, 
                      ideal_channel: torch.Tensor) -> torch.Tensor:
         """Compute loss between estimated and ideal channels."""
+        # since torch loss functions expect real-valued tensors,
+        # we need to concatenate the real and imaginary parts of
+        # the channel matrices and compute the loss on the concatenated tensor.
         return self.loss_fn(
             concat_complex_channel(estimated_channel),
             concat_complex_channel(ideal_channel)
         )
 
-    def _forward_pass(self, batch: Tuple[torch.Tensor, torch.Tensor, Tuple], 
-                     model: ModelType) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Perform forward pass through the model."""
-        estimated_channel, ideal_channel, meta_data = batch
+    def _forward_pass(self, coarse_estimated_channel: torch.Tensor, 
+                     model: ModelType,
+                     meta_data: Optional[Tuple] = None) -> torch.Tensor:
+        """Perform forward pass through the model.
         
-        # All models now handle complex input directly
+        Args:
+            coarse_estimated_channel: LS channel estimate at pilot positions (coarse estimate)
+            model: Model to perform forward pass with
+            meta_data: Optional metadata, only used by AdaFortiTran models
+            
+        Returns:
+            Estimated channel after forward pass through the model (refined estimate).
+        """
         if isinstance(model, AdaFortiTranEstimator):
             # AdaFortiTran uses meta_data for channel adaptation
-            estimated_channel = model(estimated_channel, meta_data)
+            if meta_data is not None:
+                return model(coarse_estimated_channel, meta_data)
+            else:
+                raise ValueError("AdaFortiTranEstimator requires meta_data but it was not provided")
         else:
             # Linear and FortiTran models don't use meta_data
-            estimated_channel = model(estimated_channel)
-            
-        return estimated_channel, ideal_channel.to(model.device)
+            return model(coarse_estimated_channel)
 
     def train_epoch(self, train_loader: DataLoader) -> float:
         """Train for one epoch."""
@@ -189,7 +200,8 @@ class TrainingLoop:
         
         for batch in train_loader:
             self.optimizer.zero_grad()
-            estimated_channel, ideal_channel = self._forward_pass(batch, self.model)
+            estimated_channel_input, ideal_channel, meta_data = batch
+            estimated_channel = self._forward_pass(estimated_channel_input, self.model, meta_data)
             
             if self.scaler:
                 with torch.cuda.amp.autocast():
@@ -228,7 +240,8 @@ class TrainingLoop:
         
         with torch.no_grad():
             for batch in eval_loader:
-                estimated_channel, ideal_channel = self._forward_pass(batch, self.model)
+                estimated_channel_input, ideal_channel, meta_data = batch
+                estimated_channel = self._forward_pass(estimated_channel_input, self.model, meta_data)
                 
                 if self.scaler:
                     with torch.cuda.amp.autocast():
@@ -251,17 +264,28 @@ class ModelEvaluator:
         self.device = device
         self.logger = logger
         
-    def _forward_pass(self, batch: Tuple[torch.Tensor, torch.Tensor, Tuple], 
-                     model: ModelType) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Perform forward pass through the model."""
-        estimated_channel, ideal_channel, meta_data = batch
+    def _forward_pass(self, coarse_estimated_channel: torch.Tensor, 
+                     model: ModelType,
+                     meta_data: Optional[Tuple] = None) -> torch.Tensor:
+        """Perform forward pass through the model.
         
-        if isinstance(model, AdaFortiTranEstimator):
-            estimated_channel = model(estimated_channel, meta_data)
-        else:
-            estimated_channel = model(estimated_channel)
+        Args:
+            coarse_estimated_channel: LS channel estimate at pilot positions (coarse estimate)
+            model: Model to perform forward pass with
+            meta_data: Optional metadata, only used by AdaFortiTran models
             
-        return estimated_channel, ideal_channel.to(model.device)
+        Returns:
+            Estimated channel after forward pass through the model (refined estimate).
+        """
+        if isinstance(model, AdaFortiTranEstimator):
+            # AdaFortiTran uses meta_data for channel adaptation
+            if meta_data is not None:
+                return model(coarse_estimated_channel, meta_data)
+            else:
+                raise ValueError("AdaFortiTranEstimator requires meta_data but it was not provided")
+        else:
+            # Linear and FortiTran models don't use meta_data
+            return model(coarse_estimated_channel)
 
     def predict_channels(self, test_dataloaders: List[Tuple[str, DataLoader]]) -> Dict[int, Dict]:
         """Predict channels for visualization."""
@@ -274,7 +298,8 @@ class ModelEvaluator:
         for name, test_dataloader in sorted_loaders:
             with torch.no_grad():
                 batch = next(iter(test_dataloader))
-                estimated_channels, ideal_channels = self._forward_pass(batch, self.model)
+                estimated_channel_input, ideal_channels, meta_data = batch
+                estimated_channels = self._forward_pass(estimated_channel_input, self.model, meta_data)
                 
             var, val = name.split("_")
             channels[int(val)] = {
@@ -308,7 +333,8 @@ class ModelEvaluator:
         
         with torch.no_grad():
             for batch in dataloader:
-                estimated_channel, ideal_channel = self._forward_pass(batch, self.model)
+                estimated_channel_input, ideal_channel, meta_data = batch
+                estimated_channel = self._forward_pass(estimated_channel_input, self.model, meta_data)
                 loss = loss_fn(
                     concat_complex_channel(estimated_channel),
                     concat_complex_channel(ideal_channel)
