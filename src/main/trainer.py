@@ -11,7 +11,7 @@ import torch
 from torch import nn, optim
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard.writer import SummaryWriter
-from typing import Dict, Tuple, Type, Union, Optional, List, Protocol
+from typing import Dict, Tuple, Type, Union, Optional, List
 import logging
 from tqdm import tqdm
 from dataclasses import dataclass

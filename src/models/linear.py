@@ -2,10 +2,9 @@
 Learned linear estimator module for OFDM channel estimation.
 
 This module implements an estimator for transforming channel estimates at
-pilot signals to complete channel estimates using a learned linear transformation.
+pilot signals to complete channel estimates using a learned linear transformation (i.e. W*h_pilot = h_hat).
 """
 
-from typing import Tuple
 import logging
 import torch
 import torch.nn as nn
@@ -14,7 +13,7 @@ from src.config.schemas import SystemConfig, ModelConfig
 
 
 class LinearEstimator(nn.Module):
-    """Learned MMSE estimator.
+    """Fully-connected linear estimator.
 
     Find W such that W*h_pilot = h_hat, where h_hat is the estimated channel by stochastic gradient descent on |h_hat - h_ideal|^2
 
