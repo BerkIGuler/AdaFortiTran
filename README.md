@@ -135,7 +135,7 @@ Defines the AdaFortiTran architecture parameters:
 model_type: 'adafortitran'            # should not be changed
 patch_size: [3, 2]                    # Patch dimensions
 num_layers: 6                         # number of transformer layers
-model_dim: 128                        # model dimension (i.e. the dimension after the input projection is applied to each patch)
+model_dim: 128                        # model dimension (i.e. dimension after the input projection is applied to each patch)
 num_head: 4                           # Number of self-attention heads
 activation: 'gelu'                    # Activation function (used within the MLP block of the transformer encoder)
 dropout: 0.1                          # Dropout rate (for MLP block of the transformer encoder)
@@ -230,12 +230,12 @@ Example: `1_SNR-20_DS-50_DOP-500_N-3_TDL-A.mat`
 
 ### Data Format
 
-Each `.mat` file must contain a variable `H` with shape `[subcarriers, symbols, 3]`:
-- `H[:, :, 0]`: Ground truth channel (complex values)
-- `H[:, :, 1]`: LS channel estimate with zeros for non-pilot positions
+Each `.mat` file must contain a variable `H` with shape `[# OFDM subcarriers, # OFDM symbols, 3]`:
+- `H[:, :, 0]`: complex valued ground truth channel matrix
+- `H[:, :, 1]`: least square estimate of the channel at pilot positions and zeros for non-pilot positions
 - `H[:, :, 2]`: Reserved for future use
 
-## 🔧 Usage Examples
+## Usage Examples
 
 ### Training Different Models
 
@@ -244,7 +244,6 @@ Each `.mat` file must contain a variable `H` with shape `[subcarriers, symbols, 
 python src/main.py \
     --model_name linear \
     --system_config_path config/system_config.yaml \
-    --model_config_path config/linear.yaml \
     --train_set data/train \
     --val_set data/val \
     --test_set data/test \
@@ -289,7 +288,7 @@ python src/main.py \
     --resume_from_checkpoint runs/adafortitran_experiment/best/checkpoint_epoch_50.pt
 ```
 
-## 📈 Monitoring and Logging
+## Monitoring and Logging
 
 ### TensorBoard Integration
 
@@ -299,10 +298,10 @@ Training automatically logs metrics to TensorBoard:
 tensorboard --logdir runs/
 ```
 
-Available metrics:
+Available metrics/logs:
 - Training/validation loss
 - Learning rate
-- Test performance across conditions
+- Test performance across conditions (logged once training completes)
 - Error visualizations
 - Model hyperparameters
 
@@ -312,11 +311,11 @@ Training logs are saved to:
 - `logs/training_{exp_id}.log`: Python logging output
 - `runs/{model_name}_{exp_id}/`: TensorBoard logs and checkpoints
 
-## 🧪 Testing and Evaluation
+## Testing and Evaluation
 
 ### Automatic Testing
 
-The training pipeline automatically evaluates models across comprehensive test scenarios:
+The training pipeline, once training finishes, automatically evaluates models across comprehensive test scenarios:
 
 - **DS (Delay Spread)**: 7 conditions from 50-350 ns testing multipath robustness
 - **SNR (Signal-to-Noise Ratio)**: 7 levels from 0-30 dB testing noise resilience  
@@ -348,33 +347,7 @@ model.eval()
 # ... evaluation code
 ```
 
-## 🔬 Research and Development
-
-### Adding Custom Callbacks
-
-```python
-from src.main.trainer import Callback, TrainingMetrics
-
-class CustomCallback(Callback):
-    def on_epoch_end(self, epoch: int, metrics: TrainingMetrics) -> None:
-        # Custom logic here
-        print(f"Epoch {epoch}: Train Loss = {metrics.train_loss:.4f}")
-```
-
-### Extending Models
-
-The modular architecture makes it easy to add new model variants:
-
-```python
-from src.models.fortitran import BaseFortiTranEstimator
-
-class CustomEstimator(BaseFortiTranEstimator):
-    def __init__(self, system_config, model_config):
-        super().__init__(system_config, model_config, use_channel_adaptation=True)
-        # Add custom components
-```
-
-## 📚 Citation
+## Citation
 
 If you use part of this code in your research, please cite:
 
@@ -391,7 +364,7 @@ If you use part of this code in your research, please cite:
   doi={10.1109/ICC52391.2025.11160810}}
 ```
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 

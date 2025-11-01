@@ -1,12 +1,12 @@
 from pydantic import BaseModel, Field, model_validator
-from typing import Self, Tuple, List, Optional, Literal, Union
+from typing import Self, Tuple, List, Optional, Literal
 import torch
 
 
 class OFDMParams(BaseModel):
     # ... means required (i.e. no default value)
     # gt=0 means greater than 0
-    num_scs: int = Field(..., gt=0, description="Number of sub-carriers")
+    num_scs: int = Field(..., gt=0, description="Number of OFDM subcarriers")
     num_symbols: int = Field(..., gt=0, description="Number of OFDM symbols")
 
 
@@ -18,10 +18,15 @@ class PilotParams(BaseModel):
 
 
 class SystemConfig(BaseModel):
+    """System configuration for OFDM and pilot parameters.
+    
+    Validates that pilot parameters (subcarriers and symbols) do not exceed
+    the corresponding OFDM parameters.
+    """
     ofdm: OFDMParams
     pilot: PilotParams
 
-    @model_validator(mode='after')  # validate after all fields are initialized
+    @model_validator(mode='after')  # validates after all fields are initialized
     def validate_pilot_constraints(self) -> Self:
         """Ensure pilot parameters don't exceed OFDM parameters."""
         if self.pilot.num_scs > self.ofdm.num_scs:
@@ -43,28 +48,28 @@ class SystemConfig(BaseModel):
 class BaseConfig(BaseModel):
     """Base configuration class with device validation."""
     
-    device: str = Field(default="cpu", description="Device to use")
+    device: str = Field(default="cpu", description="Computing device to use")
 
-    @model_validator(mode='after')
+    @model_validator(mode='after')  # validates after all fields are initialized
     def validate_device(self) -> Self:
         """Validate that the specified device is available."""
         device_str = self.device.lower()
 
-        # Handle 'auto' case - automatically select best available device
+        # automatically selects best available device
         if device_str == 'auto':
             if torch.cuda.is_available():
                 self.device = 'cuda'
             elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
-                self.device = 'mps'  # Apple Silicon
+                self.device = 'mps'  # Apple Silicon (MPS)
             else:
                 self.device = 'cpu'
             return self
 
-        if device_str == 'cpu':
+        elif device_str == 'cpu':
             return self
 
         # Validate CUDA devices
-        if device_str.startswith('cuda'):
+        elif device_str.startswith('cuda'):
             if not torch.cuda.is_available():
                 raise ValueError("CUDA is not available on this system")
 
@@ -88,7 +93,7 @@ class BaseConfig(BaseModel):
         # Validate MPS (Apple Silicon)
         if device_str == 'mps':
             if not (hasattr(torch.backends, 'mps') and torch.backends.mps.is_available()):
-                raise ValueError("MPS is not available on this system")
+                raise ValueError("MPS is not available/detected on this system")
             return self
 
         # If we get here, the device is not recognized
@@ -106,6 +111,12 @@ class BaseConfig(BaseModel):
 
 
 class ModelConfig(BaseConfig):
+    """Configuration for model architecture and training parameters.
+    
+    Validates model-specific requirements (e.g., AdaFortiTran requires
+    adaptive_token_length and channel_adaptivity_hidden_sizes).
+    """
+
     model_type: Literal["linear", "fortitran", "adafortitran"] = Field(
         default="fortitran",
         description="Type of model (linear, fortitran, or adafortitran)"
@@ -116,7 +127,7 @@ class ModelConfig(BaseConfig):
     num_head: int = Field(..., gt=0, description="Number of attention heads")
     activation: Literal["relu", "gelu"] = Field(
         default="gelu", 
-        description="Activation function used within the transformer's FFN"
+        description="Activation function used within the transformer's MLP block"
     )
     dropout: float = Field(default=0.1, ge=0.0, le=1.0, description="Dropout rate used within the transformer's FFN")
     max_seq_len: int = Field(default=512, gt=0, description="Maximum sequence length")
