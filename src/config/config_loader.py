@@ -1,7 +1,7 @@
 import yaml
 import logging
 from pathlib import Path
-from typing import Union, Tuple, Optional
+from typing import Union, Tuple
 from pydantic import ValidationError
 
 from .schemas import SystemConfig, ModelConfig
@@ -28,14 +28,22 @@ class ConfigLoader:
             FileNotFoundError: If either config file doesn't exist
             ValueError: If configuration validation fails
         """
-        system_config_path = Path(system_config_path)
-        model_config_path = Path(model_config_path)
+        if isinstance(system_config_path, str):
+            system_config_path = Path(system_config_path)
+        if isinstance(model_config_path, str):
+            model_config_path = Path(model_config_path)
 
         if not system_config_path.exists():
             raise FileNotFoundError(f"System configuration file not found: {system_config_path}")
 
         if not model_config_path.exists():
             raise FileNotFoundError(f"Model configuration file not found: {model_config_path}")
+        
+        if not system_config_path.suffix == '.yaml':
+            raise ValueError(f"System configuration file must be a .yaml file: {system_config_path}")
+
+        if not model_config_path.suffix == '.yaml':
+            raise ValueError(f"Model configuration file must be a .yaml file: {model_config_path}")
 
         try:
             with open(system_config_path, 'r') as f:

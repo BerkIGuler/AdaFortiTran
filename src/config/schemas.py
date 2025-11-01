@@ -142,7 +142,7 @@ class ModelConfig(BaseConfig):
     )
     channel_adaptivity_hidden_sizes: Optional[List[int]] = Field(
         default=None, 
-        description="Hidden sizes for channel adaptation layers (required for AdaFortiTran)"
+        description="Hidden sizes for channel adaptation MLP (required for AdaFortiTran)"
     )
 
     @model_validator(mode='after')
@@ -162,12 +162,14 @@ class ModelConfig(BaseConfig):
                 )
         elif self.model_type == "fortitran":
             if self.channel_adaptivity_hidden_sizes is not None:
-                # Note: channel_adaptivity_hidden_sizes will be ignored for FortiTran
-                pass
+                raise ValueError(
+                    "channel_adaptivity_hidden_sizes should not be provided for FortiTran model"
+                )
             if self.adaptive_token_length is not None:
-                # Note: adaptive_token_length will be ignored for FortiTran
-                pass
+                raise ValueError(
+                    "adaptive_token_length should not be provided for FortiTran model"
+                )
         
         return self
 
-    model_config = {"extra": "forbid"}
+    model_config = {"extra": "forbid"}  # forbid extra fields
