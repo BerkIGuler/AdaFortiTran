@@ -5,7 +5,7 @@ import torch
 class SinusoidalPositionalEncoding(nn.Module):
     """Fixed sinusoidal positional encoding"""
 
-    def __init__(self, max_len: int, d_model: int):
+    def __init__(self, max_len: int, d_model: int) -> None:
         """Initialize the positional encoding.
 
         Args:
@@ -23,7 +23,8 @@ class SinusoidalPositionalEncoding(nn.Module):
         pe[0, :, 0::2] = torch.sin(position * div_term)
         pe[0, :, 1::2] = torch.cos(position * div_term)
 
-        self.register_buffer('pe', pe)
+        self.register_buffer('pe', pe)  # store the positional encoding in the model's state_dict
+                                        # (i.e. self.to(device) moves it to the correct device) while keeping it non-trainable
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Add positional encoding to input tensor.
@@ -40,7 +41,7 @@ class SinusoidalPositionalEncoding(nn.Module):
 class LearnablePositionalEncoding(nn.Module):
     """Learnable positional encoding for transformers."""
 
-    def __init__(self, max_len: int, d_model: int):
+    def __init__(self, max_len: int, d_model: int) -> None:
         """Initialize the learnable encoding.
 
         Args:
@@ -49,7 +50,7 @@ class LearnablePositionalEncoding(nn.Module):
         """
         super().__init__()
         self.position_embeddings = nn.Parameter(torch.zeros(1, max_len, d_model))
-        nn.init.trunc_normal_(self.position_embeddings, std=0.02)
+        nn.init.trunc_normal_(self.position_embeddings, std=0.02)  # initialize the learnable positional encoding with a truncated normal distribution
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Add learnable positional encoding to input tensor.

@@ -73,8 +73,6 @@ class LinearEstimator(nn.Module):
             Estimated OFDM signal tensor with shape
             (batch_size, ofdm_size[0], ofdm_size[1])
         """
-        # pytorch does nothing if input is already on correct device
-        x = x.to(self.device)
         self.logger.debug(f"Input shape: {x.size()}")
 
         # Validate input shape

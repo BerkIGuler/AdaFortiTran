@@ -6,11 +6,11 @@ import torch
 class ChannelAdapter(nn.Module):
     """Nonlinear encoder for channel condition tokens.
 
-    Creates embeddings for SNR, delay spread, and Doppler shift parameters.
+    Creates token embeddings for SNR, delay spread, and Doppler shift parameters.
     Each embedding is conditioned on a single real value and is the output of an MLP
     """
 
-    def __init__(self, hidden_sizes: Tuple[int, int, int]):
+    def __init__(self, hidden_sizes: Tuple[int, int, int]) -> None:
         """Initialize the token encoder modules.
 
         Args:
@@ -53,7 +53,8 @@ class ChannelAdapter(nn.Module):
             doppler_shift: Doppler shift tensor of shape (batch_size, 1)
 
         Returns:
-            Concatenated token embeddings of shape (batch_size, 3, 6)
+            Concatenated token embeddings of shape (batch_size, h3/2, 6)
+            where h3 is the third element of hidden_sizes
         """
         batch_size = snr.shape[0]
         snr_emb = torch.reshape(self.snr_encoder(snr), (batch_size, -1, 2))

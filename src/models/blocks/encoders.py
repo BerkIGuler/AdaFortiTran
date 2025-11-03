@@ -18,7 +18,7 @@ class TransformerEncoderForChannels(nn.Module):
             num_layers: int = 3,
             max_len: int = 512,
             pos_encoding_type: str = "learnable"
-    ):
+    ) -> None:
         """Initialize the encoder.
 
         Args:

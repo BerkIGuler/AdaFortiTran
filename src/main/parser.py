@@ -10,7 +10,9 @@ of training runs.
 from pathlib import Path
 import argparse
 from pydantic import BaseModel, Field, model_validator
-from typing import Self, Optional
+from typing import Self, Optional, Literal
+
+from torch._dynamo.utils import Lit
 
 
 class TrainingArguments(BaseModel):
@@ -23,7 +25,7 @@ class TrainingArguments(BaseModel):
         # Model Configuration
         model_name: Supports linear, adafortitran, or fortitran training
         system_config_path: Path to OFDM system configuration file
-        model_config_path: Path to model configuration file
+        model_config_path: Path to model configuration file (not used for linear model)
 
         # Dataset Paths
         train_set: Path to training dataset directory
@@ -31,13 +33,13 @@ class TrainingArguments(BaseModel):
         test_set: Path to test dataset directory
 
         # Experiment Settings
-        exp_id: Experiment identifier string
-        python_log_level: Logging verbosity level
+        exp_id: Experiment identifier string used for logging and checkpointing
+        python_log_level: Logging verbosity level for python logging module
         tensorboard_log_dir: Directory for tensorboard logs
         python_log_dir: Directory for python logging files
 
         # Training Hyperparameters
-        batch_size: Number of samples per batch
+        batch_size: Number of samples per mini-batch
         lr: Learning rate for optimizer
         max_epoch: Maximum number of training epochs
         patience: Early stopping patience in epochs
@@ -46,23 +48,23 @@ class TrainingArguments(BaseModel):
         use_mixed_precision: Whether to use mixed precision training
 
         # Evaluation
-        test_every_n: Number of epochs between test evaluations
+        test_every_n: Number of training epochs between test evaluations
         
         # Checkpointing
         save_checkpoints: Whether to save model checkpoints
         save_best_only: Whether to save only the best model
-        save_every_n_epochs: Save checkpoint every N epochs
-        resume_from_checkpoint: Path to checkpoint to resume from
+        save_every_n_epochs: Save checkpoint every N training epochs
+        resume_from_checkpoint: Path to checkpoint to resume training from
         
         # Data Loading
-        num_workers: Number of data loading workers
-        pin_memory: Whether to pin memory for faster GPU transfer
+        num_workers: Number of data loading workers for parallel data loading
+        pin_memory: Whether to pin memory for faster GPU data transfer
     """
 
     # Model Configuration
-    model_name: str = Field(..., description="Model type to train")
-    system_config_path: Path = Field(..., description="Path to OFDM system configuration file")
-    model_config_path: Path = Field(..., description="Path to model configuration file")
+    model_name: Literal['linear', 'adafortitran', 'fortitran'] = Field(..., description="Model type to train (linear, adafortitran, or fortitran)")
+    system_config_path: Path = Field(..., description="Path to OFDM system configuration file (YAML file)")
+    model_config_path: Optional[Path] = Field(default=None, description="Path to model configuration file (YAML file); not required for linear model")
 
     # Dataset Paths
     train_set: Path = Field(..., description="Training dataset folder path")
@@ -71,7 +73,7 @@ class TrainingArguments(BaseModel):
 
     # Experiment Settings
     exp_id: str = Field(..., description="Experiment identifier for log folder naming")
-    python_log_level: str = Field(default="INFO", description="Logger level for python logging module")
+    python_log_level: Literal['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'] = Field(default="INFO", description="Logger level for python logging module")
     tensorboard_log_dir: Path = Field(default=Path("runs"), description="Directory for tensorboard logs")
     python_log_dir: Path = Field(default=Path("logs"), description="Directory for python logging files")
 
@@ -80,22 +82,22 @@ class TrainingArguments(BaseModel):
     lr: float = Field(default=1e-3, gt=0, description="Initial learning rate")
     max_epoch: int = Field(default=10, gt=0, description="Maximum number of training epochs")
     patience: int = Field(default=3, gt=0, description="Early stopping patience (epochs)")
-    weight_decay: float = Field(default=0.0, ge=0.0, description="Weight decay for optimizer")
+    weight_decay: float = Field(default=0.0, ge=0.0, description="Weight decay for optimizer (L2 regularization on the model weights)")
     gradient_clip_val: Optional[float] = Field(default=None, gt=0, description="Gradient clipping value")
     use_mixed_precision: bool = Field(default=False, description="Whether to use mixed precision training")
 
     # Evaluation
-    test_every_n: int = Field(default=10, gt=0, description="Test model every N epochs")
+    test_every_n: int = Field(default=10, gt=0, description="Test model every N training epochs")
 
     # Checkpointing
     save_checkpoints: bool = Field(default=True, description="Whether to save model checkpoints")
     save_best_only: bool = Field(default=True, description="Whether to save only the best model")
-    save_every_n_epochs: Optional[int] = Field(default=None, gt=0, description="Save checkpoint every N epochs")
-    resume_from_checkpoint: Optional[Path] = Field(default=None, description="Path to checkpoint to resume from")
+    save_every_n_epochs: Optional[int] = Field(default=None, gt=0, description="Save checkpoint every N training epochs")
+    resume_from_checkpoint: Optional[Path] = Field(default=None, description="Path to checkpoint to resume training from")
 
     # Data Loading
     num_workers: int = Field(default=4, ge=0, description="Number of data loading workers")
-    pin_memory: bool = Field(default=True, description="Whether to pin memory for faster GPU transfer")
+    pin_memory: bool = Field(default=True, description="Whether to pin memory for faster GPU data transfer")
 
     @model_validator(mode='after')
     def validate_paths(self) -> Self:
@@ -107,16 +109,19 @@ class TrainingArguments(BaseModel):
             ValueError: If the config files don't exist or aren't YAML files
         """
         if not self.system_config_path.exists():
-            raise ValueError(f"System config file not found: {self.system_config_path}")
+            raise ValueError(f"System configuration file not found: {self.system_config_path}")
 
         if not self.system_config_path.suffix == '.yaml':
-            raise ValueError(f"System config file must be a .yaml file: {self.system_config_path}")
+            raise ValueError(f"System configuration file must be a .yaml file: {self.system_config_path}")
 
-        if not self.model_config_path.exists():
-            raise ValueError(f"Model config file not found: {self.model_config_path}")
-
-        if not self.model_config_path.suffix == '.yaml':
-            raise ValueError(f"Model config file must be a .yaml file: {self.model_config_path}")
+        # Model config is required for non-linear models
+        if self.model_name != 'linear':
+            if self.model_config_path is None:
+                raise ValueError("model_config_path is required unless model_name is 'linear'")
+            if not self.model_config_path.exists():
+                raise ValueError(f"Model configuration file not found: {self.model_config_path}")
+            if not self.model_config_path.suffix == '.yaml':
+                raise ValueError(f"Model configuration file must be a .yaml file: {self.model_config_path}")
 
         # Validate checkpoint path if provided
         if self.resume_from_checkpoint is not None:
@@ -163,12 +168,7 @@ def parse_arguments() -> TrainingArguments:
         required=True,
         help='Path to YAML file containing OFDM system parameters'
     )
-    required.add_argument(
-        '--model_config_path',
-        type=Path,
-        required=True,
-        help='Path to YAML file containing model architecture parameters'
-    )
+    
     required.add_argument(
         '--train_set',
         type=Path,
@@ -192,6 +192,15 @@ def parse_arguments() -> TrainingArguments:
         type=str,
         required=True,
         help='Experiment identifier for log folder naming'
+    )
+
+    # Optional argument; path for model configuration file
+    # required for non-linear models in TrainingArguments class
+    parser.add_argument(
+        '--model_config_path',
+        type=Path,
+        default=None,
+        help='Path to YAML with model architecture (required for fortitran/adafortitran; optional for linear)'
     )
 
     # Training hyperparameters
@@ -223,19 +232,20 @@ def parse_arguments() -> TrainingArguments:
     training.add_argument(
         '--weight_decay',
         type=float,
-        default=0.0,
-        help='Weight decay for optimizer'
+        default=1e-4,
+        help='Weight decay for optimizer (L2 regularization on the model weights)'
     )
     training.add_argument(
         '--gradient_clip_val',
         type=float,
         default=None,
-        help='Gradient clipping value (disabled if not specified)'
+        help='Gradient clipping value (disabled if not specified); recommended value: 1.0'
     )
     training.add_argument(
         '--use_mixed_precision',
         action='store_true',
-        help='Use mixed precision training (requires PyTorch >= 1.6)'
+        default=False,
+        help='Use mixed precision training'
     )
 
     # Evaluation settings
@@ -243,35 +253,23 @@ def parse_arguments() -> TrainingArguments:
     evaluation.add_argument(
         '--test_every_n',
         type=int,
-        default=10,
-        help='Test model every N epochs'
+        default=None,
+        help='Test model every N training epochs'
     )
 
     # Checkpointing settings
     checkpointing = parser.add_argument_group('checkpointing settings')
     checkpointing.add_argument(
-        '--save_checkpoints',
-        action='store_true',
-        default=True,
-        help='Save model checkpoints'
-    )
-    checkpointing.add_argument(
-        '--no_save_checkpoints',
-        action='store_false',
-        dest='save_checkpoints',
-        help='Disable saving model checkpoints'
-    )
-    checkpointing.add_argument(
         '--save_best_only',
         action='store_true',
-        default=True,
-        help='Save only the best model based on validation loss'
+        default=False,
+        help='Save only the best model based on validation loss (default: save all models)'
     )
     checkpointing.add_argument(
         '--save_every_n_epochs',
         type=int,
-        default=None,
-        help='Save checkpoint every N epochs (in addition to best model)'
+        default=10,
+        help='Save checkpoint every N training epochs (in addition to best model)'
     )
     checkpointing.add_argument(
         '--resume_from_checkpoint',
@@ -291,14 +289,8 @@ def parse_arguments() -> TrainingArguments:
     data_loading.add_argument(
         '--pin_memory',
         action='store_true',
-        default=True,
+        default=False,
         help='Pin memory for faster GPU transfer'
-    )
-    data_loading.add_argument(
-        '--no_pin_memory',
-        action='store_false',
-        dest='pin_memory',
-        help='Disable pin memory'
     )
 
     # Logging settings

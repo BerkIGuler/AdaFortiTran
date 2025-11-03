@@ -4,14 +4,14 @@ import torch
 
 
 class PatchEmbedding(nn.Module):
-    """Transform channel matrix into sequence
+    """Transform channel matrix into patch embeddings (sequence of flattened vectors)
 
     Extracts non-overlapping 2D regions from the matrix, flattens them
     and outputs a sequence of flattened vectors in row-major order.
 
     """
 
-    def __init__(self, patch_size: Tuple[int, int] = (10, 4)):
+    def __init__(self, patch_size: Tuple[int, int] = (3, 2)) -> None:
         """Initialize the PatchEmbedding layer.
 
         Args:
@@ -42,7 +42,7 @@ class InversePatchEmbedding(nn.Module):
             self,
             output_size: Tuple[int, int] = (120, 14),
             patch_size: Tuple[int, int] = (3, 2)
-    ):
+    ) -> None:
         """Initialize the InversePatchEmbedding layer.
 
         Args:
