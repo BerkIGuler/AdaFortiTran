@@ -42,7 +42,7 @@ print(torch.cuda.is_available())
 
 Following ML best practices, we maintain strict separation between training and test evaluation to prevent data leakage:
 
-1. **Train models** using only training and validation sets (`src/main.py`)
+1. **Train models** using only training and validation sets (`src/train.py`)
 2. **Select best model** based on validation performance
 3. **Evaluate once** on test set using the separate evaluation script (`src/evaluate.py`)
 
@@ -51,7 +51,7 @@ Following ML best practices, we maintain strict separation between training and 
 *To train an AdaFortiTran model with default settings:*
 
 ```bash
-python src/main.py \
+python src/train.py \
     --model_name adafortitran \
     --system_config_path config/system_config.yaml \
     --model_config_path config/adafortitran.yaml \
@@ -63,7 +63,7 @@ python src/main.py \
 *To train an AdaFortiTran model with maximal configurability:*
 
 ```bash
-python src/main.py \
+python src/train.py \
     --model_name adafortitran \
     --system_config_path config/system_config.yaml \
     --model_config_path config/adafortitran.yaml \
@@ -111,7 +111,7 @@ AdaFortiTran/
 │   ├── add_gitkeep.py         # Add .gitkeep files to empty directories
 │   └── upload_to_huggingface.py  # Dataset upload utility
 ├── src/                       # Source code
-│   ├── main.py                # Main entry point for training
+│   ├── train.py               # Training script (main entry point)
 │   ├── evaluate.py            # Standalone test set evaluation script
 │   ├── main/                  # Training pipeline
 │   │   ├── trainer.py         # Unified model training
@@ -273,7 +273,7 @@ Each `.mat` file must contain a variable `H` with shape `[# OFDM subcarriers, # 
 
 **Linear Estimator**:
 ```bash
-python src/main.py \
+python src/train.py \
     --model_name linear \
     --system_config_path config/system_config.yaml \
     --train_set data/train \
@@ -283,7 +283,7 @@ python src/main.py \
 
 **FortiTran**:
 ```bash
-python src/main.py \
+python src/train.py \
     --model_name fortitran \
     --system_config_path config/system_config.yaml \
     --model_config_path config/fortitran.yaml \
@@ -294,7 +294,7 @@ python src/main.py \
 
 **AdaFortiTran**:
 ```bash
-python src/main.py \
+python src/train.py \
     --model_name adafortitran \
     --system_config_path config/system_config.yaml \
     --model_config_path config/adafortitran.yaml \
@@ -306,7 +306,7 @@ python src/main.py \
 ### Resume Training
 
 ```bash
-python src/main.py \
+python src/train.py \
     --model_name adafortitran \
     --system_config_path config/system_config.yaml \
     --model_config_path config/adafortitran.yaml \

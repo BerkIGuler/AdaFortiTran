@@ -7,7 +7,7 @@ once you have finalized your model selection based on validation performance. Th
 proper separation between model development and final evaluation.
 
 Best Practice:
-    1. Train multiple models using src/main.py
+    1. Train multiple models using src/train.py
     2. Select the best model based on VALIDATION performance
     3. Run this evaluation script ONCE on the selected model to get final test metrics
 
