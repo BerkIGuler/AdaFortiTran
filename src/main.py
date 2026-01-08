@@ -11,7 +11,7 @@ Dataset Requirements:
     
     Training/Validation Sets:
         Directory containing .mat files with naming convention:
-        {file_number}_SNR-{snr}_DS-{delay_spread}_DOP-{doppler}_N-{pilot_freq}_{channel_type}.mat
+        {file_number}_SNR-{snr}_DS-{delay_spread}_DOP-{doppler}_N-{pilot_every_nth_subcarrier}_{channel_type}.mat
         
         Example: 1_SNR-20_DS-50_DOP-500_N-3_TDL-A.mat
     
@@ -31,21 +31,18 @@ Dataset Requirements:
             ├── DOP_400/
             └── ...
     
-    Each .mat file must contain variable 'H' with shape [subcarriers, symbols, 3]:
-    - H[:, :, 0]: Ground truth channel (complex-valued channel matrix)
-    - H[:, :, 1]: LS channel estimate with zeros for non-pilot positions (complex-valued) - used as input to models
-    - H[:, :, 2]: Bilinear interpolated LS channel estimate (complex-valued) - available but currently unused
+    Each .mat file must contain variable 'H' with shape [subcarriers, symbols, 2]:
+    - H[:, :, 0]: Ground truth channel (complex-valued)
+    - H[:, :, 1]: LS channel estimate with zeros for non-pilot positions (complex-valued)
 """
 
 import logging
 import sys
-from datetime import datetime
 from pathlib import Path
 
 from src.main.parser import parse_arguments
 from src.main.trainer import train
 from src.config import load_config
-from src.config.schemas import ModelConfig
 
 
 def setup_logging(log_level: str, log_dir: Path, exp_id: str) -> None:
@@ -75,7 +72,8 @@ def setup_logging(log_level: str, log_dir: Path, exp_id: str) -> None:
 def main() -> None:
     """Main entry point for the training script."""
     try:
-        # Parse command-line arguments
+        # Parse and validate command-line arguments
+        # Device is validated and resolved (e.g., 'auto' -> 'cuda') in parse_arguments
         args = parse_arguments()
         
         # Set up logging
@@ -84,16 +82,23 @@ def main() -> None:
         
         logger.info("Starting OFDM channel estimation model training")
         logger.info(f"Model: {args.model_name}")
+        logger.info(f"Device: {args.device}")
         logger.info(f"System config: {args.system_config_path}")
-        logger.info(f"Model config: {args.model_config_path}")
+        if args.model_config_path is not None:
+            logger.info(f"Model config: {args.model_config_path}")
+        else:
+            logger.info("Model config: Not applicable for linear model")
         logger.info(f"Experiment ID: {args.exp_id}")
         
-        # Load and validate configurations
+        # Load configuration files
         logger.info("Loading configuration files...")
         system_config, model_config = load_config(
             args.system_config_path, 
             args.model_config_path
         )
+        
+        # Set device from validated args (overrides any device in config file)
+        model_config.device = args.device
         
         # Validate model type consistency
         expected_model_types = {
@@ -114,7 +119,7 @@ def main() -> None:
         
         # Log model-specific information
         if model_config.model_type == "linear":
-            logger.info(f"Linear model with device: {model_config.device}")
+            logger.info("Linear model configuration loaded")
         elif model_config.model_type == "fortitran":
             logger.info(f"FortiTran model: {model_config.num_layers} layers, {model_config.model_dim} dimensions")
             logger.info(f"Channel adaptation: disabled")

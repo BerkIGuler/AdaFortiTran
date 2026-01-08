@@ -1,6 +1,5 @@
 from pydantic import BaseModel, Field, model_validator
 from typing import Self, Tuple, List, Optional, Literal
-import torch
 
 
 class OFDMParams(BaseModel):
@@ -46,68 +45,13 @@ class SystemConfig(BaseModel):
 
 
 class BaseConfig(BaseModel):
-    """Base configuration class with device validation."""
+    """Base configuration class with device field.
     
-    device: str = Field(default="cpu", description="Computing device to use")
-
-    @model_validator(mode='after')  # validates after all fields are initialized
-    def validate_device(self) -> Self:
-        """Validate that the specified device is available."""
-        device_str = self.device.lower()
-
-        # automatically selects best available device
-        if device_str == 'auto':
-            if torch.cuda.is_available():
-                self.device = 'cuda'
-            elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
-                self.device = 'mps'  # Apple Silicon (MPS)
-            else:
-                self.device = 'cpu'
-            return self
-
-        elif device_str == 'cpu':
-            return self
-
-        # Validate CUDA devices
-        elif device_str.startswith('cuda'):
-            if not torch.cuda.is_available():
-                raise ValueError("CUDA is not available on this system")
-
-            # Handle specific CUDA device (e.g., 'cuda:0', 'cuda:1')
-            if ':' in device_str:
-                try:
-                    device_id = int(device_str.split(':')[1])
-                    if device_id >= torch.cuda.device_count():
-                        available_devices = list(range(torch.cuda.device_count()))
-                        raise ValueError(
-                            f"CUDA device {device_id} not available. "
-                            f"Available CUDA devices: {available_devices}"
-                        )
-                except (ValueError, IndexError) as e:
-                    if "invalid literal" in str(e):
-                        raise ValueError(f"Invalid CUDA device format: {device_str}")
-                    raise
-
-            return self
-
-        # Validate MPS (Apple Silicon)
-        if device_str == 'mps':
-            if not (hasattr(torch.backends, 'mps') and torch.backends.mps.is_available()):
-                raise ValueError("MPS is not available/detected on this system")
-            return self
-
-        # If we get here, the device is not recognized
-        available_devices = ['cpu']
-        if torch.cuda.is_available():
-            cuda_devices = [f'cuda:{i}' for i in range(torch.cuda.device_count())]
-            available_devices.extend(['cuda'] + cuda_devices)
-        if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
-            available_devices.append('mps')
-
-        raise ValueError(
-            f"Unsupported device: '{self.device}'. "
-            f"Available devices: {available_devices}"
-        )
+    Note: Device validation is handled in TrainingArguments.
+    The device value passed here should already be validated.
+    """
+    
+    device: str = Field(default="cpu", description="Computing device to use (pre-validated)")
 
 
 class ModelConfig(BaseConfig):
@@ -118,13 +62,14 @@ class ModelConfig(BaseConfig):
     """
 
     model_type: Literal["linear", "fortitran", "adafortitran"] = Field(
-        default="fortitran",
+        default="linear",
         description="Type of model (linear, fortitran, or adafortitran)"
     )
-    patch_size: Tuple[int, int] = Field(..., description="Patch size as (subcarriers_per_patch, symbols_per_patch)")
-    num_layers: int = Field(..., gt=0, description="Number of transformer layers")
-    model_dim: int = Field(..., gt=0, description="Model dimension")
-    num_head: int = Field(..., gt=0, description="Number of attention heads")
+    # Optional fields for transformer-based models (not required for linear)
+    patch_size: Optional[Tuple[int, int]] = Field(default=None, description="Patch size as (subcarriers_per_patch, symbols_per_patch)")
+    num_layers: Optional[int] = Field(default=None, gt=0, description="Number of transformer layers")
+    model_dim: Optional[int] = Field(default=None, gt=0, description="Model dimension")
+    num_head: Optional[int] = Field(default=None, gt=0, description="Number of attention heads")
     activation: Literal["relu", "gelu"] = Field(
         default="gelu", 
         description="Activation function used within the transformer's MLP block"
@@ -151,24 +96,33 @@ class ModelConfig(BaseConfig):
         if self.model_type == "linear":
             # Linear model only needs device, no additional validation required
             pass
-        elif self.model_type == "adafortitran":
-            if self.channel_adaptivity_hidden_sizes is None:
-                raise ValueError(
-                    "channel_adaptivity_hidden_sizes is required for AdaFortiTran model"
-                )
-            if self.adaptive_token_length is None:
-                raise ValueError(
-                    "adaptive_token_length is required for AdaFortiTran model"
-                )
-        elif self.model_type == "fortitran":
-            if self.channel_adaptivity_hidden_sizes is not None:
-                raise ValueError(
-                    "channel_adaptivity_hidden_sizes should not be provided for FortiTran model"
-                )
-            if self.adaptive_token_length is not None:
-                raise ValueError(
-                    "adaptive_token_length should not be provided for FortiTran model"
-                )
+        elif self.model_type in ["fortitran", "adafortitran"]:
+            # Transformer-based models require these fields
+            required_fields = ["patch_size", "num_layers", "model_dim", "num_head"]
+            for field in required_fields:
+                if getattr(self, field) is None:
+                    raise ValueError(f"{field} is required for {self.model_type} model")
+            
+            # AdaFortiTran-specific requirements
+            if self.model_type == "adafortitran":
+                if self.channel_adaptivity_hidden_sizes is None:
+                    raise ValueError(
+                        "channel_adaptivity_hidden_sizes is required for AdaFortiTran model"
+                    )
+                if self.adaptive_token_length is None:
+                    raise ValueError(
+                        "adaptive_token_length is required for AdaFortiTran model"
+                    )
+            # FortiTran-specific constraints
+            elif self.model_type == "fortitran":
+                if self.channel_adaptivity_hidden_sizes is not None:
+                    raise ValueError(
+                        "channel_adaptivity_hidden_sizes should not be provided for FortiTran model"
+                    )
+                if self.adaptive_token_length is not None:
+                    raise ValueError(
+                        "adaptive_token_length should not be provided for FortiTran model"
+                    )
         
         return self
 

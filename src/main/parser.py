@@ -11,8 +11,7 @@ from pathlib import Path
 import argparse
 from pydantic import BaseModel, Field, model_validator
 from typing import Self, Optional, Literal
-
-from torch._dynamo.utils import Lit
+import torch
 
 
 class TrainingArguments(BaseModel):
@@ -25,7 +24,8 @@ class TrainingArguments(BaseModel):
         # Model Configuration
         model_name: Supports linear, adafortitran, or fortitran training
         system_config_path: Path to OFDM system configuration file
-        model_config_path: Path to model configuration file (not used for linear model)
+        model_config_path: Path to model configuration file (not required for linear model)
+        device: Computing device (cpu, cuda, cuda:N, mps, or auto)
 
         # Dataset Paths
         train_set: Path to training dataset directory
@@ -65,6 +65,7 @@ class TrainingArguments(BaseModel):
     model_name: Literal['linear', 'adafortitran', 'fortitran'] = Field(..., description="Model type to train (linear, adafortitran, or fortitran)")
     system_config_path: Path = Field(..., description="Path to OFDM system configuration file (YAML file)")
     model_config_path: Optional[Path] = Field(default=None, description="Path to model configuration file (YAML file); not required for linear model")
+    device: str = Field(default="auto", description="Computing device (cpu, cuda, cuda:0, mps, or auto)")
 
     # Dataset Paths
     train_set: Path = Field(..., description="Training dataset folder path")
@@ -100,17 +101,17 @@ class TrainingArguments(BaseModel):
     pin_memory: bool = Field(default=True, description="Whether to pin memory for faster GPU data transfer")
 
     @model_validator(mode='after')
-    def validate_paths(self) -> Self:
-        """Validate path-related arguments.
+    def validate_arguments(self) -> Self:
+        """Validate training arguments.
 
-        Checks that the config files exist and have the correct extension.
+        Checks paths, device, hyperparameters, and logical consistency.
 
         Raises:
-            ValueError: If the config files don't exist or aren't YAML files
+            ValueError: If validation fails
         """
+        # Validate system config path
         if not self.system_config_path.exists():
             raise ValueError(f"System configuration file not found: {self.system_config_path}")
-
         if not self.system_config_path.suffix == '.yaml':
             raise ValueError(f"System configuration file must be a .yaml file: {self.system_config_path}")
 
@@ -130,7 +131,83 @@ class TrainingArguments(BaseModel):
             if not self.resume_from_checkpoint.suffix == '.pt':
                 raise ValueError(f"Checkpoint file must be a .pt file: {self.resume_from_checkpoint}")
 
+        # Validate dataset paths exist
+        if not self.train_set.exists():
+            raise ValueError(f"Training dataset not found: {self.train_set}")
+        if not self.val_set.exists():
+            raise ValueError(f"Validation dataset not found: {self.val_set}")
+        if not self.test_set.exists():
+            raise ValueError(f"Test dataset not found: {self.test_set}")
+
+        # Validate and resolve device
+        self._validate_and_resolve_device()
+
         return self
+    
+    def _validate_and_resolve_device(self) -> None:
+        """Validate and resolve the device string.
+        
+        Handles 'auto' selection, validates CUDA and MPS availability,
+        and checks CUDA device IDs.
+        
+        Raises:
+            ValueError: If device is invalid or unavailable
+        """
+        device_str = self.device.lower()
+
+        # Handle 'auto' - automatically select best available device
+        if device_str == 'auto':
+            if torch.cuda.is_available():
+                self.device = 'cuda'
+            elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+                self.device = 'mps'  # Apple Silicon (MPS)
+            else:
+                self.device = 'cpu'
+            return
+
+        # CPU is always valid
+        if device_str == 'cpu':
+            return
+
+        # Validate CUDA devices
+        if device_str.startswith('cuda'):
+            if not torch.cuda.is_available():
+                raise ValueError("CUDA is not available on this system")
+
+            # Handle specific CUDA device (e.g., 'cuda:0', 'cuda:1')
+            if ':' in device_str:
+                try:
+                    device_id = int(device_str.split(':')[1])
+                    if device_id >= torch.cuda.device_count():
+                        available_devices = list(range(torch.cuda.device_count()))
+                        raise ValueError(
+                            f"CUDA device {device_id} not available. "
+                            f"Available CUDA devices: {available_devices}"
+                        )
+                except (ValueError, IndexError) as e:
+                    if "invalid literal" in str(e):
+                        raise ValueError(f"Invalid CUDA device format: {device_str}")
+                    raise
+            return
+
+        # Validate MPS (Apple Silicon)
+        if device_str == 'mps':
+            if not (hasattr(torch.backends, 'mps') and torch.backends.mps.is_available()):
+                raise ValueError("MPS is not available/detected on this system")
+            return
+
+        # If we get here, the device is not recognized
+        available_devices = ['cpu']
+        if torch.cuda.is_available():
+            cuda_devices = [f'cuda:{i}' for i in range(torch.cuda.device_count())]
+            available_devices.extend(['cuda'] + cuda_devices)
+        if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+            available_devices.append('mps')
+
+        raise ValueError(
+            f"Unsupported device: '{self.device}'. "
+            f"Available devices: {available_devices}"
+        )
 
 
 def parse_arguments() -> TrainingArguments:
@@ -201,6 +278,13 @@ def parse_arguments() -> TrainingArguments:
         type=Path,
         default=None,
         help='Path to YAML with model architecture (required for fortitran/adafortitran; optional for linear)'
+    )
+    
+    parser.add_argument(
+        '--device',
+        type=str,
+        default='auto',
+        help='Computing device: cpu, cuda, cuda:N, mps, or auto (default: auto selects best available)'
     )
 
     # Training hyperparameters

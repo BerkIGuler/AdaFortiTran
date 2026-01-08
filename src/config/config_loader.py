@@ -1,7 +1,7 @@
 import yaml
 import logging
 from pathlib import Path
-from typing import Union, Tuple
+from typing import Union, Tuple, Optional
 from pydantic import ValidationError
 
 from .schemas import SystemConfig, ModelConfig
@@ -13,13 +13,13 @@ class ConfigLoader:
     def __init__(self):
         self.logger = logging.getLogger(__name__)
 
-    def load_and_validate(self, system_config_path: Union[str, Path], model_config_path: Union[str, Path]) -> Tuple[SystemConfig, ModelConfig]:
+    def load_and_validate(self, system_config_path: Union[str, Path], model_config_path: Optional[Union[str, Path]]) -> Tuple[SystemConfig, ModelConfig]:
         """
         Load and validate configuration files from YAML files.
 
         Args:
             system_config_path: Path to YAML configuration file for OFDM-related parameters
-            model_config_path: Path to YAML configuration file for model-related parameters
+            model_config_path: Path to YAML configuration file for model-related parameters (None for linear model)
 
         Returns:
             Tuple of (SystemConfig, ModelConfig): Validated configuration objects
@@ -35,15 +35,17 @@ class ConfigLoader:
 
         if not system_config_path.exists():
             raise FileNotFoundError(f"System configuration file not found: {system_config_path}")
-
-        if not model_config_path.exists():
-            raise FileNotFoundError(f"Model configuration file not found: {model_config_path}")
         
         if not system_config_path.suffix == '.yaml':
             raise ValueError(f"System configuration file must be a .yaml file: {system_config_path}")
 
-        if not model_config_path.suffix == '.yaml':
-            raise ValueError(f"Model configuration file must be a .yaml file: {model_config_path}")
+        # Validate model config path if provided
+        if model_config_path is not None:
+            if not model_config_path.exists():
+                raise FileNotFoundError(f"Model configuration file not found: {model_config_path}")
+            
+            if not model_config_path.suffix == '.yaml':
+                raise ValueError(f"Model configuration file must be a .yaml file: {model_config_path}")
 
         try:
             with open(system_config_path, 'r') as f:
@@ -57,22 +59,39 @@ class ConfigLoader:
         except ValidationError as e:
             raise ValueError(f"System configuration validation for {system_config_path} failed:\n{e}")
 
-        try:
-            with open(model_config_path, 'r') as f:
-                model_raw_config = yaml.safe_load(f)
-        except yaml.YAMLError as e:
-            raise ValueError(f"Failed to parse YAML file {model_config_path}: {e}")
-        
-        try:
-            model_config = ModelConfig(**model_raw_config)
-            self.logger.info(f"Successfully loaded model config from {model_config_path}")
-        except ValidationError as e:
-            raise ValueError(f"Model configuration validation for {model_config_path} failed:\n{e}")
+        # Load model config if provided (for non-linear models)
+        if model_config_path is not None:
+            try:
+                with open(model_config_path, 'r') as f:
+                    model_raw_config = yaml.safe_load(f)
+            except yaml.YAMLError as e:
+                raise ValueError(f"Failed to parse YAML file {model_config_path}: {e}")
+            
+            try:
+                model_config = ModelConfig(**model_raw_config)
+                self.logger.info(f"Successfully loaded model config from {model_config_path}")
+            except ValidationError as e:
+                raise ValueError(f"Model configuration validation for {model_config_path} failed:\n{e}")
+        else:
+            # For linear model, create minimal ModelConfig (device will be set from args)
+            self.logger.info("No model config provided (linear model); creating minimal config")
+            try:
+                model_config = ModelConfig(model_type="linear")
+            except ValidationError as e:
+                raise ValueError(f"Model configuration validation failed:\n{e}")
 
         return system_config, model_config
 
 
-def load_config(system_config_path: Union[str, Path], model_config_path: Union[str, Path]) -> Tuple[SystemConfig, ModelConfig]:
-    """Convenience function to load and validate config."""
+def load_config(system_config_path: Union[str, Path], model_config_path: Optional[Union[str, Path]]) -> Tuple[SystemConfig, ModelConfig]:
+    """Convenience function to load and validate config.
+    
+    Args:
+        system_config_path: Path to OFDM system configuration file
+        model_config_path: Path to model configuration file (None for linear model)
+    
+    Returns:
+        Tuple of (SystemConfig, ModelConfig): Validated configuration objects
+    """
     config_loader = ConfigLoader()
     return config_loader.load_and_validate(system_config_path, model_config_path)
