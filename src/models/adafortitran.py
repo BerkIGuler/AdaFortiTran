@@ -11,12 +11,13 @@ class AdaFortiTranEstimator(BaseFortiTranEstimator):
     the estimation process through conditional attention mechanisms.
     """
 
-    def __init__(self, system_config: SystemConfig, model_config: ModelConfig) -> None:
+    def __init__(self, system_config: SystemConfig, model_config: ModelConfig, device: str = 'cpu') -> None:
         """
         Initialize the AdaFortiTranEstimator.
 
         Args:
             system_config: OFDM system configuration (subcarriers, symbols, pilot arrangement)
             model_config: Model architecture configuration (patch size, layers, etc.)
+            device: Computing device string (e.g., 'cpu', 'cuda', 'cuda:0'). Default: 'cpu'.
         """
-        super().__init__(system_config, model_config, use_channel_adaptation=True)
+        super().__init__(system_config, model_config, device=device, use_channel_adaptation=True)

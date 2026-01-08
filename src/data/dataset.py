@@ -16,7 +16,7 @@ File Naming Convention:
 File Content Structure:
     Each .mat file must contain a variable 'H' with shape [subcarriers, symbols, 2]:
     - H[:, :, 0]: Complex valued ground truth channel
-    - H[:, :, 1]: Complex valued least squares (LS) channel estimate at pilot positions with zeros at non-pilot positions (used as input to models)
+    - H[:, :, 1]: Complex valued least squares (LS) channel estimate at pilot positions with zeros at non-pilot positions
 
 The dataset extracts pilot values from the LS estimates and provides metadata from the filename for adaptive channel estimation models.
 """
@@ -102,7 +102,7 @@ class MatDataset(Dataset):
         returning complex-valued tensors for both estimate and ground truth.
 
         Args:
-            mat_data: Loaded .mat file data containing 'H' variable with shape [subcarriers, symbols, 3]
+            mat_data: Loaded .mat file data containing 'H' variable with shape [subcarriers, symbols, 2]
 
         Returns:
             Tuple of (pilot LS estimate at pilot positions (complex tensor, shape [pilot_scs, pilot_symbols]),
@@ -168,8 +168,8 @@ class MatDataset(Dataset):
 
         try:
             mat_data = sio.loadmat(self.file_list[idx])
-            if 'H' not in mat_data or mat_data['H'].shape[-1] < 2:
-                raise ValueError("Invalid .mat file format: missing required data")
+            if 'H' not in mat_data or mat_data['H'].shape[-1] != 2:
+                raise ValueError("Invalid .mat file format: missing required key 'H' or data has incorrect shape")
 
             # Process channel data to extract pilot estimates
             h_est, h_ideal = self._process_channel_data(mat_data)

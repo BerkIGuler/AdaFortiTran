@@ -21,13 +21,14 @@ class BaseFortiTranEstimator(nn.Module):
     """
 
     def __init__(self, system_config: SystemConfig, model_config: ModelConfig,
-                 use_channel_adaptation: bool = False) -> None:
+                 device: str = 'cpu', use_channel_adaptation: bool = False) -> None:
         """
         Initialize the BaseFortiTranEstimator.
 
         Args:
             system_config: OFDM system configuration (subcarriers, symbols, pilot arrangement)
             model_config: Model architecture configuration (patch size, layers, etc.)
+            device: Computing device string (e.g., 'cpu', 'cuda', 'cuda:0'). Default: 'cpu'.
             use_channel_adaptation: Whether to enable channel adaptation features (disabled for FortiTran)
         """
         super().__init__()
@@ -35,7 +36,7 @@ class BaseFortiTranEstimator(nn.Module):
         self.system_config = system_config
         self.model_config = model_config
         self.use_channel_adaptation = use_channel_adaptation
-        self.device = torch.device(model_config.device)
+        self.device = torch.device(device)
         self.logger = logging.getLogger(self.__class__.__name__)
 
         # Cache key dimensions for efficiency

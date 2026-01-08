@@ -97,9 +97,6 @@ def main() -> None:
             args.model_config_path
         )
         
-        # Set device from validated args (overrides any device in config file)
-        model_config.device = args.device
-        
         # Validate model type consistency
         expected_model_types = {
             "linear": "linear",

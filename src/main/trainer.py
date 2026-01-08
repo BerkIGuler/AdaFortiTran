@@ -293,7 +293,7 @@ class ModelTrainer:
         self.system_config = system_config
         self.model_config = model_config
         self.args = args
-        self.device = torch.device(model_config.device)
+        self.device = torch.device(args.device)
         self.writer = self._setup_tensorboard()
         self.logger = logging.getLogger(__name__)
 
@@ -381,7 +381,7 @@ class ModelTrainer:
             raise ValueError(f"Unknown model name: {self.args.model_name}. Available: {list(self.MODEL_REGISTRY.keys())}")
         
         model_class = self.MODEL_REGISTRY[self.args.model_name]
-        model = model_class(self.system_config, self.model_config)
+        model = model_class(self.system_config, self.model_config, device=self.args.device)
         
         num_params, model_summary = get_model_details(model)
         self.logger.info("\n" + model_summary)
