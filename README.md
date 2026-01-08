@@ -8,13 +8,13 @@ Official implementation of [AdaFortiTran: An Adaptive Transformer Model for Robu
 
 ## Overview
 
-AdaFortiTran is a novel adaptive transformer-based model for SISO OFDM channel estimation that dynamically adapts to channel conditions (e.g. SNR, delay spread, Doppler shift). The model combines a custom-designed deep upsampling network with multi head self attention (MHSA) and convolutional operators and a channel-aware adaptation mechanism embedded into MHSA calculation to achieve competitive performance across diverse wireless environments.
+AdaFortiTran is a novel adaptive transformer-based model for SISO OFDM channel estimation that dynamically adapts to channel conditions (e.g., SNR, delay spread, Doppler shift). The model combines a custom-designed deep upsampling network with multi-head self-attention (MHSA) and convolutional operators, along with a channel-aware adaptation mechanism embedded into the MHSA calculation, to achieve competitive performance across diverse wireless environments. We also release FortiTran, which is parameter-free, i.e., lacks the adaptation capability, but still outperforms all baselines.
 
 ## Architecture
 
 This repository implements three models:
 
-1. **Linear Estimator**: Simple learned linear estimator baseline (single fully-connected layer without non-linear activations)
+1. **Linear Estimator**: Simple learned linear estimator baseline (single fully-connected layer without activation)
 2. **FortiTran**: Base channel estimator based on MHSA and convolutional operators w/o channel adaptivity
 3. **AdaFortiTran**: Adaptive version of FortiTran with channel condition awareness
 
@@ -38,18 +38,25 @@ import torch
 print(torch.cuda.is_available())
 ```
 
-### Sample Training scripts
+### Recommended Workflow
+
+Following ML best practices, we maintain strict separation between training and test evaluation to prevent data leakage:
+
+1. **Train models** using only training and validation sets (`src/main.py`)
+2. **Select best model** based on validation performance
+3. **Evaluate once** on test set using the separate evaluation script (`src/evaluate.py`)
+
+### Sample Training Scripts
 
 *To train an AdaFortiTran model with default settings:*
 
 ```bash
-python3 src/main.py \
+python src/main.py \
     --model_name adafortitran \
     --system_config_path config/system_config.yaml \
     --model_config_path config/adafortitran.yaml \
     --train_set data/train \
     --val_set data/val \
-    --test_set data/test \
     --exp_id my_experiment
 ```
 
@@ -62,7 +69,6 @@ python src/main.py \
     --model_config_path config/adafortitran.yaml \
     --train_set data/train \
     --val_set data/val \
-    --test_set data/test \
     --exp_id advanced_experiment \
     --batch_size 128 \
     --lr 5e-4 \
@@ -72,8 +78,19 @@ python src/main.py \
     --gradient_clip_val 1.0 \
     --use_mixed_precision \
     --save_every_n_epochs 5 \
-    --num_workers 8 \
-    --test_every_n 5
+    --num_workers 8
+```
+
+### Sample Evaluation Script
+
+*After training completes, evaluate the best model on the test set:*
+
+```bash
+python src/evaluate.py \
+    --checkpoint_path runs/adafortitran_my_experiment/best/checkpoint_epoch_50.pt \
+    --test_set data/test \
+    --batch_size 128 \
+    --output_dir results/final_evaluation
 ```
 
 ## Project Structure
@@ -82,7 +99,7 @@ AdaFortiTran/
 ├── config/                    # Configuration files
 │   ├── system_config.yaml     # configurable OFDM system parameters
 │   ├── adafortitran.yaml      # default AdaFortiTran model config
-│   ├── fortitran.yaml         # default FortiTran model config
+│   └── fortitran.yaml         # default FortiTran model config
 ├── data/                      # Dataset directory
 │   ├── train/                 # Training data
 │   ├── val/                   # Validation data
@@ -90,7 +107,12 @@ AdaFortiTran/
 │       ├── DS_test_set/       # Delay Spread robustness tests (7 conditions)  
 │       ├── MDS_test_set/      # Max. Doppler Shift tests (7 conditions)
 │       └── SNR_test_set/      # Signal-to-Noise Ratio tests (7 conditions)
+├── scripts/                   # Utility scripts
+│   ├── add_gitkeep.py         # Add .gitkeep files to empty directories
+│   └── upload_to_huggingface.py  # Dataset upload utility
 ├── src/                       # Source code
+│   ├── main.py                # Main entry point for training
+│   ├── evaluate.py            # Standalone test set evaluation script
 │   ├── main/                  # Training pipeline
 │   │   ├── trainer.py         # Unified model training
 │   │   └── parser.py          # Command-line argument parser
@@ -99,6 +121,11 @@ AdaFortiTran/
 │   │   ├── fortitran.py       # FortiTran model
 │   │   ├── linear.py          # Linear model
 │   │   └── blocks/            # Model building blocks
+│   │       ├── channel_adaptivity.py  # Channel adaptation mechanisms
+│   │       ├── encoders.py    # Transformer encoders
+│   │       ├── enhancers.py   # Feature enhancement modules
+│   │       ├── patch_processors.py    # Patch processing layers
+│   │       └── positional_encodings.py  # Positional encoding implementations
 │   ├── data/                  # Data loading
 │   │   └── dataset.py         # Data handling/processing
 │   ├── config/                # Configuration management
@@ -106,7 +133,8 @@ AdaFortiTran/
 │   │   └── schemas.py         # Pydantic validation schemas
 │   └── utils.py               # Utility functions
 ├── requirements.txt           # Python dependencies
-├── README.md                  # This file
+├── LICENSE                    # MIT License
+└── README.md                  # This file
 ```
 
 ## Configuration
@@ -245,7 +273,6 @@ python src/main.py \
     --system_config_path config/system_config.yaml \
     --train_set data/train \
     --val_set data/val \
-    --test_set data/test \
     --exp_id linear_baseline
 ```
 
@@ -257,7 +284,6 @@ python src/main.py \
     --model_config_path config/fortitran.yaml \
     --train_set data/train \
     --val_set data/val \
-    --test_set data/test \
     --exp_id fortitran_experiment
 ```
 
@@ -269,7 +295,6 @@ python src/main.py \
     --model_config_path config/adafortitran.yaml \
     --train_set data/train \
     --val_set data/val \
-    --test_set data/test \
     --exp_id adafortitran_experiment
 ```
 
@@ -282,7 +307,6 @@ python src/main.py \
     --model_config_path config/adafortitran.yaml \
     --train_set data/train \
     --val_set data/val \
-    --test_set data/test \
     --exp_id resumed_experiment \
     --resume_from_checkpoint runs/adafortitran_experiment/best/checkpoint_epoch_50.pt
 ```
@@ -300,8 +324,6 @@ tensorboard --logdir runs/
 Available metrics/logs:
 - Training/validation loss
 - Learning rate
-- Test performance across conditions (logged once training completes)
-- Error visualizations
 - Model hyperparameters
 
 ### Log Files
@@ -312,39 +334,47 @@ Training logs are saved to:
 
 ## Testing and Evaluation
 
-### Automatic Testing
+### Important: Separate Test Evaluation
 
-The training pipeline, once training finishes, automatically evaluates models across comprehensive test scenarios:
+**Following ML best practices, the test set is NEVER used during training.** This ensures:
+- No data leakage from test set to model development
+- Valid generalization metrics
+- Reproducible and trustworthy results
 
-- **DS (Delay Spread)**: 7 conditions from 50-350 ns testing multipath robustness
-- **SNR (Signal-to-Noise Ratio)**: 7 levels from 0-30 dB testing noise resilience  
-- **MDS (Multi-Doppler Shift)**: 7 frequencies from 200-1400 Hz testing mobility adaptation
+### Evaluation Workflow
 
-Results are logged per test condition, enabling detailed robustness analysis across different wireless environments.
+After training completes, use the standalone evaluation script to assess your model on the test set:
 
-### Manual Evaluation
-
-```python
-from src.models import AdaFortiTranEstimator
-from src.config import load_config
-
-# Load configurations
-system_config, model_config = load_config(
-    'config/system_config.yaml', 
-    'config/adafortitran.yaml'
-)
-
-# Initialize model
-model = AdaFortiTranEstimator(system_config, model_config)
-
-# Load checkpoint
-checkpoint = torch.load('checkpoint.pt')
-model.load_state_dict(checkpoint['model_state_dict'])
-
-# Evaluate
-model.eval()
-# ... evaluation code
+```bash
+python src/evaluate.py \
+    --checkpoint_path runs/adafortitran_experiment/best/checkpoint_epoch_50.pt \
+    --test_set data/test \
+    --batch_size 128 \
+    --output_dir results/final_evaluation
 ```
+
+The evaluation script will:
+- Load your trained model checkpoint
+- Evaluate across all test conditions:
+  - **DS (Delay Spread)**: 7 conditions from 50-350 ns testing multipath robustness
+  - **SNR (Signal-to-Noise Ratio)**: 7 levels from 0-30 dB testing noise resilience  
+  - **MDS (Multi-Doppler Shift)**: 7 frequencies from 200-1400 Hz testing mobility adaptation
+- Generate performance plots and error visualizations
+- Save results to the specified output directory
+
+### Evaluation Script Options
+
+```bash
+python src/evaluate.py --help
+```
+
+Key arguments:
+- `--checkpoint_path`: Path to trained model checkpoint (required)
+- `--test_set`: Path to test dataset directory (required)
+- `--batch_size`: Batch size for evaluation (default: 64)
+- `--output_dir`: Directory to save evaluation results
+- `--device`: Computing device (cpu, cuda, mps, or auto)
+- `--num_workers`: Number of data loading workers
 
 ## Citation
 

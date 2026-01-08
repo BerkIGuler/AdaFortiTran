@@ -19,16 +19,12 @@ from pathlib import Path
 from abc import ABC, abstractmethod
 
 from .parser import TrainingArguments
-from src.data import MatDataset, get_test_dataloaders
+from src.data import MatDataset
 from src.models import LinearEstimator, AdaFortiTranEstimator, FortiTranEstimator
 from src.utils import (
     EarlyStopping,
-    get_ls_mse_per_folder,
     get_model_details,
-    get_test_stats_plot,
-    get_error_images,
-    concat_complex_channel,
-    to_db
+    concat_complex_channel
 )
 from src.config.schemas import SystemConfig, ModelConfig
 
@@ -43,14 +39,6 @@ class TrainingMetrics:
     val_loss: float
     epoch: int
     learning_rate: float
-
-
-@dataclass
-class TestResults:
-    """Container for test results."""
-    ds_stats: Dict[int, float]
-    mds_stats: Dict[int, float]
-    snr_stats: Dict[int, float]
 
 
 class Callback(ABC):
@@ -256,97 +244,6 @@ class TrainingLoop:
         return val_loss / num_samples
 
 
-class ModelEvaluator:
-    """Handles model evaluation and testing."""
-    
-    def __init__(self, model: ModelType, device: torch.device, logger: logging.Logger):
-        self.model = model
-        self.device = device
-        self.logger = logger
-        
-    def _forward_pass(self, coarse_estimated_channel: torch.Tensor, 
-                     model: ModelType,
-                     meta_data: Optional[Tuple] = None) -> torch.Tensor:
-        """Perform forward pass through the model.
-        
-        Args:
-            coarse_estimated_channel: LS channel estimate at pilot positions (coarse estimate)
-            model: Model to perform forward pass with
-            meta_data: Optional metadata, only used by AdaFortiTran models
-            
-        Returns:
-            Estimated channel after forward pass through the model (refined estimate).
-        """
-        if isinstance(model, AdaFortiTranEstimator):
-            # AdaFortiTran uses meta_data for channel adaptation
-            if meta_data is not None:
-                return model(coarse_estimated_channel, meta_data)
-            else:
-                raise ValueError("AdaFortiTranEstimator requires meta_data but it was not provided")
-        else:
-            # Linear and FortiTran models don't use meta_data
-            return model(coarse_estimated_channel)
-
-    def predict_channels(self, test_dataloaders: List[Tuple[str, DataLoader]]) -> Dict[int, Dict]:
-        """Predict channels for visualization."""
-        channels = {}
-        sorted_loaders = sorted(
-            test_dataloaders,
-            key=lambda x: int(x[0].split("_")[1])
-        )
-        
-        for name, test_dataloader in sorted_loaders:
-            with torch.no_grad():
-                batch = next(iter(test_dataloader))
-                estimated_channel_input, ideal_channels, meta_data = batch
-                estimated_channels = self._forward_pass(estimated_channel_input, self.model, meta_data)
-                
-            var, val = name.split("_")
-            channels[int(val)] = {
-                "estimated_channel": estimated_channels[0],
-                "ideal_channel": ideal_channels[0]
-            }
-        return channels
-
-    def get_test_stats(self, test_dataloaders: List[Tuple[str, DataLoader]], 
-                      loss_fn: nn.Module) -> Dict[int, float]:
-        """Get test statistics for a set of dataloaders."""
-        stats = {}
-        sorted_loaders = sorted(
-            test_dataloaders,
-            key=lambda x: int(x[0].split("_")[1])
-        )
-        
-        for name, test_dataloader in sorted_loaders:
-            var, val = name.split("_")
-            test_loss = self._evaluate_dataloader(test_dataloader, loss_fn)
-            db_error = to_db(test_loss)
-            self.logger.info(f"{var}:{val} Test MSE: {db_error:.4f} dB")
-            stats[int(val)] = db_error
-        return stats
-
-    def _evaluate_dataloader(self, dataloader: DataLoader, loss_fn: nn.Module) -> float:
-        """Evaluate a single dataloader."""
-        total_loss = 0.0
-        num_samples = 0
-        self.model.eval()
-        
-        with torch.no_grad():
-            for batch in dataloader:
-                estimated_channel_input, ideal_channel, meta_data = batch
-                estimated_channel = self._forward_pass(estimated_channel_input, self.model, meta_data)
-                loss = loss_fn(
-                    concat_complex_channel(estimated_channel),
-                    concat_complex_channel(ideal_channel)
-                )
-                
-                batch_size = batch[0].size(0)
-                total_loss += (2 * loss.item() * batch_size)
-                num_samples += batch_size
-                
-        return total_loss / num_samples
-
-
 class ModelTrainer:
     """Handles the training and evaluation of deep learning models.
 
@@ -371,10 +268,8 @@ class ModelTrainer:
         early_stopper: Helper for early stopping
         train_loader: DataLoader for training set (used for training)
         val_loader: DataLoader for validation set (used for validation)
-        test_loaders: Dictionary of test set DataLoaders (used for testing)
         logger: Logger instance for logging messages
         training_loop: TrainingLoop instance for core training logic
-        evaluator: ModelEvaluator instance for evaluation logic
         callbacks: List of training callbacks
     """
 
@@ -421,14 +316,13 @@ class ModelTrainer:
             self.scaler = torch.cuda.amp.GradScaler()
             self.logger.info("Mixed precision training enabled")
 
-        self.train_loader, self.val_loader, self.test_loaders = self._get_dataloaders()
+        self.train_loader, self.val_loader = self._get_dataloaders()
         
         # Initialize components
         self.training_loop = TrainingLoop(
             self.model, self.optimizer, self.scheduler, self.training_loss, 
             self.device, self.scaler, self.args.gradient_clip_val
         )
-        self.evaluator = ModelEvaluator(self.model, self.device, self.logger)
         
         # Initialize callbacks
         self.callbacks = self._setup_callbacks()
@@ -496,8 +390,8 @@ class ModelTrainer:
         self.writer.add_text("Number of Parameters", str(num_params))
         return model
 
-    def _get_dataloaders(self) -> Tuple[DataLoader, DataLoader, dict[str, list[tuple[str, DataLoader]]]]:
-        """Get training, validation, and test dataloaders."""
+    def _get_dataloaders(self) -> Tuple[DataLoader, DataLoader]:
+        """Get training and validation dataloaders."""
         # Training and validation dataloaders
         train_dataset = MatDataset(self.args.train_set, self.system_config.pilot)
         val_dataset = MatDataset(self.args.val_set, self.system_config.pilot)
@@ -518,87 +412,12 @@ class ModelTrainer:
             pin_memory=self.args.pin_memory and self.device.type == 'cuda'
         )
         
-        # Test dataloaders
-        test_loaders = {
-            "DS": get_test_dataloaders(
-                self.args.test_set / "DS_test_set",
-                self.system_config.pilot,
-                self.args.batch_size
-            ),
-            "MDS": get_test_dataloaders(
-                self.args.test_set / "MDS_test_set",
-                self.system_config.pilot,
-                self.args.batch_size
-            ),
-            "SNR": get_test_dataloaders(
-                self.args.test_set / "SNR_test_set",
-                self.system_config.pilot,
-                self.args.batch_size
-            ),
-        }
-        return train_loader, val_loader, test_loaders
-
-    def _log_test_results(self, epoch: int, test_stats: Dict[str, Dict]) -> None:
-        """Log test results to TensorBoard.
-
-        Creates and logs visualizations for model performance across different test conditions.
-
-        Args:
-            epoch: Current training epoch
-            test_stats: Dictionary of test statistics for the model
-        """
-        for key in ("DS", "MDS", "SNR"):
-            # Plot test statistics
-            self.writer.add_figure(
-                tag=f"MSE vs. {key} (Epoch:{epoch + 1})",
-                figure=get_test_stats_plot(
-                    x_name=key,
-                    stats=[test_stats[key]],
-                    methods=[self.args.model_name]
-                )
-            )
-
-            # Plot error images
-            predicted_channels = self.evaluator.predict_channels(self.test_loaders[key])
-            self.writer.add_figure(
-                tag=f"{key} Error Images (Epoch:{epoch + 1})",
-                figure=get_error_images(
-                    key,
-                    predicted_channels,
-                    show=False
-                )
-            )
-
-    def _run_tests(self, epoch: int) -> TestResults:
-        """Run tests and log results.
-
-        Evaluates the model on all test datasets and logs performance metrics and visualizations.
-
-        Args:
-            epoch: Current training epoch
-            
-        Returns:
-            TestResults containing all test statistics
-        """
-        ds_stats = self.evaluator.get_test_stats(self.test_loaders["DS"], self.training_loss)
-        mds_stats = self.evaluator.get_test_stats(self.test_loaders["MDS"], self.training_loss)
-        snr_stats = self.evaluator.get_test_stats(self.test_loaders["SNR"], self.training_loss)
-
-        test_stats = {
-            "DS": ds_stats,
-            "MDS": mds_stats,
-            "SNR": snr_stats
-        }
-
-        self._log_test_results(epoch, test_stats)
-        
-        return TestResults(ds_stats, mds_stats, snr_stats)
+        return train_loader, val_loader
 
     def _log_final_metrics(self, final_epoch: int) -> None:
         """Log final training metrics and hyperparameters.
 
-        Records hyperparameters used in training and final performance metrics
-        across all test conditions for experiment tracking.
+        Records hyperparameters used in training for experiment tracking.
 
         Args:
             final_epoch: The index of the final training epoch
@@ -609,41 +428,6 @@ class ModelTrainer:
             metric_dict={"last_epoch": final_epoch + 1},
             run_name="."
         )
-
-        try:
-            for key in ("DS", "MDS", "SNR"):
-                ds_stats, mds_stats, snr_stats = self._get_all_test_stats()
-                ls_stats = {
-                    "DS": get_ls_mse_per_folder(self.args.test_set / "DS_test_set"),
-                    "MDS": get_ls_mse_per_folder(self.args.test_set / "MDS_test_set"),
-                    "SNR": get_ls_mse_per_folder(self.args.test_set / "SNR_test_set")
-                }
-
-                if key == "DS":
-                    stats = ds_stats
-                elif key == "MDS":
-                    stats = mds_stats
-                else:
-                    stats = snr_stats
-
-                for val in stats.keys():
-                    self.writer.add_scalars(
-                        key,
-                        {
-                            "LS": ls_stats[key][val],
-                            self.args.model_name: stats[val]
-                        },
-                        val
-                    )
-        except Exception as e:
-            self.writer.add_text("Error", f"Failed to log final test results: {str(e)}")
-
-    def _get_all_test_stats(self) -> Tuple[Dict[int, float], Dict[int, float], Dict[int, float]]:
-        """Get all test statistics."""
-        ds_stats = self.evaluator.get_test_stats(self.test_loaders["DS"], self.training_loss)
-        mds_stats = self.evaluator.get_test_stats(self.test_loaders["MDS"], self.training_loss)
-        snr_stats = self.evaluator.get_test_stats(self.test_loaders["SNR"], self.training_loss)
-        return ds_stats, mds_stats, snr_stats
 
     def save_checkpoint(self, epoch: int, metrics: TrainingMetrics, 
                        checkpoint_dir: Optional[Path] = None) -> None:
@@ -722,9 +506,11 @@ class ModelTrainer:
 
         Runs the complete training process including:
         - Training and validation for each epoch
-        - Periodic testing based on test_every_n
         - Early stopping when validation loss plateaus
-        - Logging final metrics and results
+        - Logging final metrics
+        
+        Note: Test set evaluation should be performed separately using the evaluation script
+        after training is complete and model selection is finalized.
         """
         # Notify callbacks that training is beginning
         for callback in self.callbacks:
@@ -767,12 +553,6 @@ class ModelTrainer:
             if self.early_stopper.early_stop(val_loss):
                 pbar.write(f"Early stopping triggered at epoch {epoch + 1}")
                 break
-
-            # Periodic testing
-            if (epoch + 1) % self.args.test_every_n == 0:
-                message = f"Test results after epoch {epoch + 1}:\n" + 50 * "-"
-                pbar.write(message)
-                self._run_tests(epoch)
                 
         self._log_final_metrics(last_epoch)
         
