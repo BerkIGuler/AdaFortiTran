@@ -300,7 +300,7 @@ def parse_arguments() -> TrainingArguments:
     training.add_argument(
         '--weight_decay',
         type=float,
-        default=1e-4,
+        default=0.0,
         help='Weight decay for optimizer (L2 regularization on the model weights)'
     )
     training.add_argument(
@@ -348,7 +348,7 @@ def parse_arguments() -> TrainingArguments:
     data_loading.add_argument(
         '--pin_memory',
         action='store_true',
-        default=False,
+        default=True,
         help='Pin memory for faster GPU transfer'
     )
 

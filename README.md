@@ -179,14 +179,19 @@ adaptive_token_length: 6              # Adaptive token vector (concatenated with
 
 | Feature | Description | Default |
 |---------|-------------|---------|
-| `--use_mixed_precision` | Enable mixed precision training | False |
+| `--batch_size` | Training batch size | 64 |
+| `--lr` | Initial learning rate | 1e-3 |
+| `--max_epoch` | Maximum number of training epochs | 10 |
+| `--patience` | Early stopping patience (epochs) | 3 |
+| `--weight_decay` | Weight decay for optimizer (L2 regularization) | 0.0 |
 | `--gradient_clip_val` | Gradient clipping value | None |
-| `--weight_decay` | Weight decay for optimizer | 0.0 |
-| `--save_checkpoints` | Enable model checkpointing | True |
+| `--use_mixed_precision` | Enable mixed precision training | False |
 | `--save_best_only` | Save only best model | True |
+| `--save_every_n_epochs` | Save checkpoint every N epochs | None |
 | `--resume_from_checkpoint` | Resume from checkpoint | None |
 | `--num_workers` | Data loading workers | 4 |
-| `--pin_memory` | Pin memory for GPU | True |
+| `--pin_memory` | Pin memory for faster GPU transfer | True |
+| `--device` | Computing device (cpu, cuda, mps, auto) | auto |
 
 ### Callback System
 
@@ -333,13 +338,6 @@ Training logs are saved to:
 - `runs/{model_name}_{exp_id}/`: TensorBoard logs and checkpoints
 
 ## Testing and Evaluation
-
-### Important: Separate Test Evaluation
-
-**Following ML best practices, the test set is NEVER used during training.** This ensures:
-- No data leakage from test set to model development
-- Valid generalization metrics
-- Reproducible and trustworthy results
 
 ### Evaluation Workflow
 
