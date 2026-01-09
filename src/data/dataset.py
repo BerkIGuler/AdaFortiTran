@@ -80,7 +80,10 @@ class MatDataset(Dataset):
         if not self.data_dir.exists():
             raise FileNotFoundError(f"Data directory not found: {self.data_dir}")
 
-        self.file_list = list(self.data_dir.glob("*.mat"))
+        self.file_list = [
+            f for f in self.data_dir.glob("*.mat") 
+            if not f.name.startswith(".")
+        ]
         if not self.file_list:
             raise ValueError(f"No .mat files found in {self.data_dir}")
 

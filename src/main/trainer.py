@@ -384,9 +384,9 @@ class ModelTrainer:
         model = model_class(self.system_config, self.model_config, device=self.args.device)
         
         num_params, model_summary = get_model_details(model)
-        self.logger.info("\n" + model_summary)
+        self.logger.info("\n" + str(model_summary))
         self.logger.info(f"Model name: {self.args.model_name} | Number of parameters: {num_params}")
-        self.writer.add_text("Model Summary", model_summary)
+        self.writer.add_text("Model Summary", str(model_summary))
         self.writer.add_text("Number of Parameters", str(num_params))
         return model
 
