@@ -38,6 +38,7 @@ Dataset Requirements:
 
 import logging
 import sys
+from datetime import datetime
 from pathlib import Path
 
 from src.main.parser import parse_arguments
@@ -45,19 +46,19 @@ from src.main.trainer import train
 from src.config import load_config
 
 
-def setup_logging(log_level: str, log_dir: Path, exp_id: str) -> None:
+def setup_logging(log_level: str, log_dir: Path, run_name: str) -> None:
     """Set up logging configuration.
     
     Args:
         log_level: Logging level string (DEBUG, INFO, WARNING, ERROR, CRITICAL)
         log_dir: Directory path for log files
-        exp_id: Experiment identifier for log file naming
+        run_name: Run name for log file naming (includes model, exp_id, and timestamp)
     """
     # Create logs directory if it doesn't exist
     log_dir.mkdir(parents=True, exist_ok=True)
     
-    # Create log file path using exp_id for easy matching
-    log_file = log_dir / f"training_{exp_id}.log"
+    # Create log file path using run_name for easy matching with TensorBoard runs
+    log_file = log_dir / f"training_{run_name}.log"
     
     logging.basicConfig(
         level=getattr(logging, log_level.upper()),
@@ -76,8 +77,12 @@ def main() -> None:
         # Device is validated and resolved (e.g., 'auto' -> 'cuda') in parse_arguments
         args = parse_arguments()
         
-        # Set up logging
-        setup_logging(args.python_log_level, args.python_log_dir, args.exp_id)
+        # Generate timestamp for this run (shared between logs and tensorboard)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        run_name = f"{args.model_name}_{args.exp_id}_{timestamp}"
+        
+        # Set up logging with run_name for easy matching with TensorBoard
+        setup_logging(args.python_log_level, args.python_log_dir, run_name)
         logger = logging.getLogger(__name__)
         
         logger.info("Starting OFDM channel estimation model training")
@@ -129,7 +134,8 @@ def main() -> None:
         
         # Start training
         logger.info("Initializing training...")
-        train(system_config, model_config, args)
+        logger.info(f"Run name: {run_name}")
+        train(system_config, model_config, args, run_name)
         
         logger.info("Training completed successfully")
         

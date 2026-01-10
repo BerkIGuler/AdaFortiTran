@@ -393,8 +393,12 @@ Available metrics/logs:
 ### Log Files
 
 Training logs are saved to:
-- `logs/training_{exp_id}.log`: Python logging output
-- `runs/{model_name}_{exp_id}/`: TensorBoard logs and checkpoints
+- `logs/training_{model_name}_{exp_id}_{timestamp}.log`: Python logging output
+- `runs/{model_name}_{exp_id}_{timestamp}/`: TensorBoard logs and checkpoints
+
+Both files share the same timestamp, making it easy to match logs with TensorBoard runs. For example:
+- Log file: `logs/training_adafortitran_my_exp_20260109_143052.log`
+- TensorBoard: `runs/adafortitran_my_exp_20260109_143052/`
 
 ## Testing and Evaluation
 

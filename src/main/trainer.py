@@ -294,7 +294,7 @@ class ModelTrainer:
 
     EXP_LR_GAMMA = 0.995
 
-    def __init__(self, system_config: SystemConfig, model_config: ModelConfig, args: TrainingArguments):
+    def __init__(self, system_config: SystemConfig, model_config: ModelConfig, args: TrainingArguments, run_name: str):
         """
         Initialize the ModelTrainer.
 
@@ -302,10 +302,12 @@ class ModelTrainer:
             system_config: OFDM system configuration dictionary from YAML file
             model_config: OFDM model configuration dictionary from YAML file
             args: Validated training arguments parsed from command line
+            run_name: Unique run identifier (model_name_exp_id_timestamp) for logs and checkpoints
         """
         self.system_config = system_config
         self.model_config = model_config
         self.args = args
+        self.run_name = run_name
         self.device = torch.device(args.device)
         self.writer = self._setup_tensorboard()
         self.logger = logging.getLogger(__name__)
@@ -353,7 +355,7 @@ class ModelTrainer:
         
         # Checkpoint callback (only if checkpointing is enabled)
         if self.args.save_checkpoints:
-            checkpoint_dir = self.args.tensorboard_log_dir / f"{self.args.model_name}_{self.args.exp_id}"
+            checkpoint_dir = self.args.tensorboard_log_dir / self.run_name
             checkpoint_callback = CheckpointCallback(
                 save_dir=checkpoint_dir,
                 save_best_only=self.args.save_best_only,
@@ -367,18 +369,12 @@ class ModelTrainer:
     def _setup_tensorboard(self) -> SummaryWriter:
         """Set up TensorBoard logging.
 
-        Creates a unique log directory based on model name and experiment ID.
+        Creates a unique log directory based on the run name.
 
         Returns:
             Initialized SummaryWriter for TensorBoard logging
-
-        Raises:
-            RuntimeError: If experiment directory already exists
         """
-        log_path = self.args.tensorboard_log_dir / f"{self.args.model_name}_{self.args.exp_id}"
-        if log_path.exists():
-            raise RuntimeError(f"Experiment {log_path} already exists")
-
+        log_path = self.args.tensorboard_log_dir / self.run_name
         return SummaryWriter(str(log_path))
 
     def _initialize_model(self) -> ModelType:
@@ -574,7 +570,7 @@ class ModelTrainer:
             callback.on_training_end()
 
 
-def train(system_config: SystemConfig, model_config: ModelConfig, args: TrainingArguments) -> None:
+def train(system_config: SystemConfig, model_config: ModelConfig, args: TrainingArguments, run_name: str) -> None:
     """
     Train an OFDM channel estimation model.
 
@@ -587,6 +583,7 @@ def train(system_config: SystemConfig, model_config: ModelConfig, args: Training
         args: Validated training arguments containing all necessary parameters
               for model training, including dataset paths, hyperparameters,
               and logging configuration
+        run_name: Unique run identifier (model_name_exp_id_timestamp) for logs and checkpoints
     """
-    trainer = ModelTrainer(system_config, model_config, args)
+    trainer = ModelTrainer(system_config, model_config, args, run_name)
     trainer.train()
