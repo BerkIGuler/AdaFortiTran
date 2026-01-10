@@ -29,18 +29,19 @@ class LinearEstimator(nn.Module):
             num_symbols (int): number of pilots across OFDM symbols
     """
 
-    def __init__(self, system_config: SystemConfig, model_config: ModelConfig) -> None:
+    def __init__(self, system_config: SystemConfig, model_config: ModelConfig, device: str = 'cpu') -> None:
         """Initialize the MMSE estimator.
 
         Args:
             system_config: Validated SystemConfig object containing OFDM system parameters
             model_config: Validated ModelConfig object containing model parameters
+            device: Computing device string (e.g., 'cpu', 'cuda', 'cuda:0'). Default: 'cpu'.
         """
         super().__init__()
 
         self.system_config = system_config
         self.model_config = model_config
-        self.device = torch.device(model_config.device)
+        self.device = torch.device(device)
         self.logger = logging.getLogger(__name__)
 
         # Extract dimensions from validated config
@@ -68,6 +69,7 @@ class LinearEstimator(nn.Module):
         Args:
             x: Input tensor containing pilot signals with shape
                (batch_size, pilot_size[0], pilot_size[1])
+               Can be complex-valued.
 
         Returns:
             Estimated OFDM signal tensor with shape
@@ -82,6 +84,25 @@ class LinearEstimator(nn.Module):
                 f"Expected input shape {expected_shape}, got {x.size()}"
             )
 
+        # Handle complex input by processing real and imaginary parts separately
+        if x.is_complex():
+            real_output = self._forward_real(x.real)
+            imag_output = self._forward_real(x.imag)
+            return torch.complex(real_output, imag_output)
+        else:
+            return self._forward_real(x)
+
+    def _forward_real(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass for real-valued input.
+
+        Args:
+            x: Real-valued input tensor with shape
+               (batch_size, pilot_size[0], pilot_size[1])
+
+        Returns:
+            Real-valued output tensor with shape
+            (batch_size, ofdm_size[0], ofdm_size[1])
+        """
         # Flatten input for linear transformation
         x = torch.flatten(x, start_dim=1)
         self.logger.debug(f"Flattened shape: {x.size()}")

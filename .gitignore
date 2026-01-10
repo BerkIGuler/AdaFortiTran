@@ -1,5 +1,20 @@
 .idea/
-+**/__pycache__/
+**/__pycache__/
+*.pyc
+**/.pytest_cache/
+**/.ruff_cache/
+**/.vscode/
+**/.venv/
+**/.env/
+**/.env.local/
+**/.env.development.local/
+**/.env.test.local/
+**/.env.production.local/
+
+logs/
+runs/
+
+**/__MACOSX/
 
 # Ignore data files but keep directory structure
 data/**/*.mat

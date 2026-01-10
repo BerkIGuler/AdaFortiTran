@@ -1,7 +1,7 @@
 model_type: 'fortitran'
 patch_size: [3, 2]
 num_layers: 6
-model_dim: 128
+model_dim: 32
 num_head: 4
 activation: 'gelu'
 dropout: 0.1

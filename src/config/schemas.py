@@ -45,13 +45,13 @@ class SystemConfig(BaseModel):
 
 
 class BaseConfig(BaseModel):
-    """Base configuration class with device field.
+    """Base configuration class for model configurations.
     
-    Note: Device validation is handled in TrainingArguments.
-    The device value passed here should already be validated.
+    Note: This class contains only model-specific parameters.
+    Experiment-specific parameters (device, batch_size, etc.) are handled
+    separately in TrainingArguments and passed via command line.
     """
-    
-    device: str = Field(default="cpu", description="Computing device to use (pre-validated)")
+    pass
 
 
 class ModelConfig(BaseConfig):

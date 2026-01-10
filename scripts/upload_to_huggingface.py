@@ -133,13 +133,12 @@ pip install -r requirements.txt
 ### Training
 
 ```bash
-python src/main.py \
+python src/train.py \
     --model_name adafortitran \
     --system_config_path config/system_config.yaml \
     --model_config_path config/adafortitran.yaml \
     --train_set data/train \
     --val_set data/val \
-    --test_set data/test \
     --exp_id my_experiment
 ```
 

@@ -30,7 +30,6 @@ class TrainingArguments(BaseModel):
         # Dataset Paths
         train_set: Path to training dataset directory
         val_set: Path to validation dataset directory
-        test_set: Path to test dataset directory
 
         # Experiment Settings
         exp_id: Experiment identifier string used for logging and checkpointing
@@ -43,12 +42,9 @@ class TrainingArguments(BaseModel):
         lr: Learning rate for optimizer
         max_epoch: Maximum number of training epochs
         patience: Early stopping patience in epochs
-        weight_decay: Weight decay for optimizer
-        gradient_clip_val: Gradient clipping value
+        weight_decay: Weight decay for optimizer (i.e. lambda for L2 regularization on the model weights)
+        gradient_clip_val: Gradient clipping value (i.e. max norm for gradient clipping)
         use_mixed_precision: Whether to use mixed precision training
-
-        # Evaluation
-        test_every_n: Number of training epochs between test evaluations
         
         # Checkpointing
         save_checkpoints: Whether to save model checkpoints
@@ -70,7 +66,6 @@ class TrainingArguments(BaseModel):
     # Dataset Paths
     train_set: Path = Field(..., description="Training dataset folder path")
     val_set: Path = Field(..., description="Validation dataset folder path")
-    test_set: Path = Field(..., description="Test dataset folder path")
 
     # Experiment Settings
     exp_id: str = Field(..., description="Experiment identifier for log folder naming")
@@ -86,9 +81,6 @@ class TrainingArguments(BaseModel):
     weight_decay: float = Field(default=0.0, ge=0.0, description="Weight decay for optimizer (L2 regularization on the model weights)")
     gradient_clip_val: Optional[float] = Field(default=None, gt=0, description="Gradient clipping value")
     use_mixed_precision: bool = Field(default=False, description="Whether to use mixed precision training")
-
-    # Evaluation
-    test_every_n: int = Field(default=10, gt=0, description="Test model every N training epochs")
 
     # Checkpointing
     save_checkpoints: bool = Field(default=True, description="Whether to save model checkpoints")
@@ -136,8 +128,6 @@ class TrainingArguments(BaseModel):
             raise ValueError(f"Training dataset not found: {self.train_set}")
         if not self.val_set.exists():
             raise ValueError(f"Validation dataset not found: {self.val_set}")
-        if not self.test_set.exists():
-            raise ValueError(f"Test dataset not found: {self.test_set}")
 
         # Validate and resolve device
         self._validate_and_resolve_device()
@@ -259,12 +249,6 @@ def parse_arguments() -> TrainingArguments:
         help='Validation dataset folder path'
     )
     required.add_argument(
-        '--test_set',
-        type=Path,
-        required=True,
-        help='Test dataset folder path'
-    )
-    required.add_argument(
         '--exp_id',
         type=str,
         required=True,
@@ -316,7 +300,7 @@ def parse_arguments() -> TrainingArguments:
     training.add_argument(
         '--weight_decay',
         type=float,
-        default=1e-4,
+        default=0.0,
         help='Weight decay for optimizer (L2 regularization on the model weights)'
     )
     training.add_argument(
@@ -330,15 +314,6 @@ def parse_arguments() -> TrainingArguments:
         action='store_true',
         default=False,
         help='Use mixed precision training'
-    )
-
-    # Evaluation settings
-    evaluation = parser.add_argument_group('evaluation settings')
-    evaluation.add_argument(
-        '--test_every_n',
-        type=int,
-        default=None,
-        help='Test model every N training epochs'
     )
 
     # Checkpointing settings
@@ -373,7 +348,7 @@ def parse_arguments() -> TrainingArguments:
     data_loading.add_argument(
         '--pin_memory',
         action='store_true',
-        default=False,
+        default=True,
         help='Pin memory for faster GPU transfer'
     )
 
