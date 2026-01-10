@@ -69,6 +69,7 @@ class LinearEstimator(nn.Module):
         Args:
             x: Input tensor containing pilot signals with shape
                (batch_size, pilot_size[0], pilot_size[1])
+               Can be complex-valued.
 
         Returns:
             Estimated OFDM signal tensor with shape
@@ -83,6 +84,25 @@ class LinearEstimator(nn.Module):
                 f"Expected input shape {expected_shape}, got {x.size()}"
             )
 
+        # Handle complex input by processing real and imaginary parts separately
+        if x.is_complex():
+            real_output = self._forward_real(x.real)
+            imag_output = self._forward_real(x.imag)
+            return torch.complex(real_output, imag_output)
+        else:
+            return self._forward_real(x)
+
+    def _forward_real(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass for real-valued input.
+
+        Args:
+            x: Real-valued input tensor with shape
+               (batch_size, pilot_size[0], pilot_size[1])
+
+        Returns:
+            Real-valued output tensor with shape
+            (batch_size, ofdm_size[0], ofdm_size[1])
+        """
         # Flatten input for linear transformation
         x = torch.flatten(x, start_dim=1)
         self.logger.debug(f"Flattened shape: {x.size()}")

@@ -189,6 +189,11 @@ class TrainingLoop:
         for batch in train_loader:
             self.optimizer.zero_grad()
             estimated_channel_input, ideal_channel, meta_data = batch
+            
+            # Move tensors to device
+            estimated_channel_input = estimated_channel_input.to(self.device)
+            ideal_channel = ideal_channel.to(self.device)
+            
             estimated_channel = self._forward_pass(estimated_channel_input, self.model, meta_data)
             
             if self.scaler:
@@ -214,6 +219,8 @@ class TrainingLoop:
                 self.optimizer.step()
             
             batch_size = batch[0].size(0)
+            # Multiply by 2 because concat_complex_channel doubles the tensor size,
+            # so MSE on concatenated real+imag gives half the true complex MSE
             train_loss += (2 * loss.item() * batch_size)
             num_samples += batch_size
             
@@ -229,6 +236,11 @@ class TrainingLoop:
         with torch.no_grad():
             for batch in eval_loader:
                 estimated_channel_input, ideal_channel, meta_data = batch
+                
+                # Move tensors to device
+                estimated_channel_input = estimated_channel_input.to(self.device)
+                ideal_channel = ideal_channel.to(self.device)
+                
                 estimated_channel = self._forward_pass(estimated_channel_input, self.model, meta_data)
                 
                 if self.scaler:
@@ -238,6 +250,7 @@ class TrainingLoop:
                     loss = self._compute_loss(estimated_channel, ideal_channel)
                 
                 batch_size = batch[0].size(0)
+                # Multiply by 2: complex_MSE = 2 * real_concatenated_MSE
                 val_loss += (2 * loss.item() * batch_size)
                 num_samples += batch_size
                 

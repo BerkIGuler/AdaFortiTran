@@ -3,5 +3,5 @@ ofdm:
   num_symbols: 14
 
 pilot:
-  num_scs: 12
+  num_scs: 40
   num_symbols: 2

@@ -146,6 +146,11 @@ def evaluate_dataloader(model: nn.Module,
     with torch.no_grad():
         for batch in dataloader:
             estimated_channel_input, ideal_channel, meta_data = batch
+            
+            # Move tensors to device
+            estimated_channel_input = estimated_channel_input.to(device)
+            ideal_channel = ideal_channel.to(device)
+            
             estimated_channel = forward_pass(estimated_channel_input, model, meta_data)
             loss = loss_fn(
                 concat_complex_channel(estimated_channel),
@@ -153,6 +158,7 @@ def evaluate_dataloader(model: nn.Module,
             )
             
             batch_size = batch[0].size(0)
+            # Multiply by 2: complex_MSE = 2 * real_concatenated_MSE
             total_loss += (2 * loss.item() * batch_size)
             num_samples += batch_size
             
@@ -216,6 +222,10 @@ def predict_channels(model: nn.Module,
         for name, test_dataloader in sorted_loaders:
             batch = next(iter(test_dataloader))
             estimated_channel_input, ideal_channels, meta_data = batch
+            
+            # Move tensors to device
+            estimated_channel_input = estimated_channel_input.to(device)
+            
             estimated_channels = forward_pass(estimated_channel_input, model, meta_data)
             
             var, val = name.split("_")
