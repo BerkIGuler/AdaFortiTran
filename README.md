@@ -8,6 +8,8 @@ Official implementation of [AdaFortiTran: An Adaptive Transformer Model for Robu
 
 AdaFortiTran is a novel, compact, and adaptive transformer-based channel estimation model for SISO OFDM systems. AdaFortiTran dynamically adapts to channel conditions such as SNR, delay spread, Doppler shift. The model combines a custom-designed deep upsampling network with multi-head self-attention (MHSA) and convolutional operators, along with a channel-aware adaptation mechanism embedded into the MHSA calculation, to achieve competitive performance across diverse wireless environments. In the absence of priors on the channel conditions, we resort to FortiTran, which is parameter-free, i.e., lacks the adaptation capability, but still demonstrates impressive results beyond competing methods.
 
+> **Note on Data:** This repository includes sample data (`data/sample_data/`) for demonstration purposes only. To generate the full dataset used in the paper (144k samples with train/val/test splits), please use the companion repository: [OFDMChannelGenerator](https://github.com/BerkIGuler/OFDMChannelGenerator).
+
 ## Architecture
 
 This repository implements three models:
