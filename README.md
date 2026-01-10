@@ -1,14 +1,12 @@
 # AdaFortiTran: Adaptive Transformer Model for Robust OFDM Channel Estimation
 
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
-[![PyTorch](https://img.shields.io/badge/PyTorch-1.8+-red.svg)](https://pytorch.org/)
 
 Official implementation of [AdaFortiTran: An Adaptive Transformer Model for Robust OFDM Channel Estimation](https://ieeexplore.ieee.org/document/11160810) accepted at ICC 2025, Montreal, Canada.
 
 ## Overview
 
-AdaFortiTran is a novel adaptive transformer-based model for SISO OFDM channel estimation that dynamically adapts to channel conditions (e.g., SNR, delay spread, Doppler shift). The model combines a custom-designed deep upsampling network with multi-head self-attention (MHSA) and convolutional operators, along with a channel-aware adaptation mechanism embedded into the MHSA calculation, to achieve competitive performance across diverse wireless environments. We also release FortiTran, which is parameter-free, i.e., lacks the adaptation capability, but still outperforms all baselines.
+AdaFortiTran is a novel, compact, and adaptive transformer-based channel estimation model for SISO OFDM systems. AdaFortiTran dynamically adapts to channel conditions such as SNR, delay spread, Doppler shift. The model combines a custom-designed deep upsampling network with multi-head self-attention (MHSA) and convolutional operators, along with a channel-aware adaptation mechanism embedded into the MHSA calculation, to achieve competitive performance across diverse wireless environments. In the absence of priors on the channel conditions, we resort to FortiTran, which is parameter-free, i.e., lacks the adaptation capability, but still demonstrates impressive results beyond competing methods.
 
 ## Architecture
 
@@ -18,37 +16,189 @@ This repository implements three models:
 2. **FortiTran**: Base channel estimator based on MHSA and convolutional operators w/o channel adaptivity
 3. **AdaFortiTran**: Adaptive version of FortiTran with channel condition awareness
 
-### Installation
+## Installation
 
 1. **Clone the repository**:
    ```bash
    git clone https://github.com/your-username/AdaFortiTran.git
    cd AdaFortiTran
    ```
-2. **Make sure to have CUDA properly installed**: If you have a CUDA-compatible GPU, you should install and configure the necessary drivers/kernels for accelerated computing on GPU(s).  
+
+2. **Make sure to have CUDA properly installed**: If you have a CUDA-compatible GPU, you should install and configure the necessary drivers/kernels for accelerated computing on GPU(s). 
+
+   **Note:** This repository is tested for CUDA and CPU only.
 
 3. **Install dependencies**:
    ```bash
    pip install -r requirements.txt
    ```
 
-*Note:* One simple way to see if CUDA is accessible through PyTorch is to run the following python script.
+   Dependencies include:
+   - `torch` - PyTorch deep learning framework
+   - `pydantic` - Configuration validation
+   - `pyyaml` - YAML configuration parsing
+   - `scipy` - MATLAB file I/O for `.mat` datasets
+   - `tqdm` - Progress bars
+   - `matplotlib` - Visualization
+   - `prettytable` - Formatted console output
+   - `tensorboard` - Training metrics visualization
+
+4. **Verify CUDA availability** (optional):
+   ```python
+   import torch
+   print(torch.cuda.is_available())
+   ```
+
+## Quick Start with Example Notebooks
+
+The `examples/` directory contains Jupyter notebooks that provides simple walkthrough of the workflow:
+
+### 01_data_setup.ipynb — Data Preparation
+
+Extracts and prepares the sample dataset for training:
+- Extracts `data/sample_data/sample_files.zip` containing 1000 `.mat` files
+- Splits data into 80% training (800 samples) / 20% validation (200 samples)
+- Copies files to `data/train/` and `data/val/` directories
+- Preprocesses `.mat` files to keep only the required channels (`H[:,:,0:2]`)
+- Visualizes sample channel data (perfect channel vs. LS estimate)
+
+**Note**: The sample data is included for demonstration purposes only. Please contact the author(s) for the datasets used in the original paper. 
+
+**Run this notebook first before training.**
+
+### 02_training.ipynb — Model Training
+
+Demonstrates training all three models via the training script:
+- Configurable hyperparameters (batch size, learning rate, epochs, patience)
+- Trains **Linear**, **FortiTran**, and **AdaFortiTran** models sequentially
+- Saves checkpoints to `runs/{model_name}_{exp_id}/`
+- Logs training metrics to TensorBoard
+
+### 03_inference.ipynb — Inference & Visualization
+
+Loads trained models and performs inference:
+- Discovers and lists available checkpoints from `runs/`
+- Loads a trained model from checkpoint
+- Runs inference on validation data
+- Visualizes channel estimation results (ground truth vs. predicted vs. error)
+- Computes **Normalized MSE (NMSE)** in linear and dB scale:
+  
+  $$\text{NMSE} = \frac{\|\hat{H} - H\|^2}{\|H\|^2}$$
+
+- Evaluates performance across the entire validation set
+
+**Note:** We use val set here for demonstration purposes. The inference should be performed on the unseen test data.
+**Prerequisites:** Run `01_data_setup.ipynb` and `02_training.ipynb` first.
+
+## Project Structure
+
 ```
-import torch
-print(torch.cuda.is_available())
+AdaFortiTran/
+├── config/                    # Configuration files
+│   ├── system_config.yaml     # OFDM system parameters
+│   ├── adafortitran.yaml      # AdaFortiTran model config
+│   └── fortitran.yaml         # FortiTran model config
+├── data/                      # Dataset directory
+│   ├── sample_data/           # Sample data for demos
+│   │   ├── sample_files.zip   # 1000 sample .mat files
+│   │   └── extracted/         # Extracted sample files
+│   ├── train/                 # Training data
+│   ├── val/                   # Validation data
+│   └── test/                  # Test data organized by evaluation scenarios
+│       ├── DS_test_set/       # Delay Spread robustness tests (7 conditions)  
+│       ├── MDS_test_set/      # Max. Doppler Shift tests (7 conditions)
+│       └── SNR_test_set/      # Signal-to-Noise Ratio tests (7 conditions)
+├── examples/                  # Jupyter notebook tutorials
+│   ├── 01_data_setup.ipynb    # Data extraction and preparation
+│   ├── 02_training.ipynb      # Model training demo
+│   └── 03_inference.ipynb     # Inference and visualization
+├── logs/                      # Training log files
+├── runs/                      # Checkpoints and TensorBoard logs
+├── scripts/                   # Utility scripts
+│   ├── add_gitkeep.py         # Add .gitkeep files to empty directories
+│   └── upload_to_huggingface.py  # Dataset upload utility
+├── src/                       # Source code
+│   ├── train.py               # Training script (main entry point)
+│   ├── evaluate.py            # Standalone test set evaluation script
+│   ├── utils.py               # Utility functions
+│   ├── main/                  # Training pipeline
+│   │   ├── trainer.py         # Unified model training
+│   │   └── parser.py          # Command-line argument parser
+│   ├── models/                # Model implementations
+│   │   ├── adafortitran.py    # AdaFortiTran model (extends FortiTran)
+│   │   ├── fortitran.py       # FortiTran model
+│   │   ├── linear.py          # Linear model
+│   │   └── blocks/            # Model building blocks
+│   │       ├── channel_adaptivity.py  # Channel adaptation mechanisms
+│   │       ├── encoders.py    # Transformer encoders
+│   │       ├── enhancers.py   # Feature enhancement modules
+│   │       ├── patch_processors.py    # Patch processing layers
+│   │       └── positional_encodings.py  # Positional encoding implementations
+│   ├── data/                  # Data loading
+│   │   └── dataset.py         # MatDataset class for .mat file handling
+│   └── config/                # Configuration management
+│       ├── config_loader.py   # YAML configuration loader
+│       └── schemas.py         # Pydantic validation schemas
+├── requirements.txt           # Python dependencies
+├── LICENSE                    # MIT License
+└── README.md                  # This file
 ```
 
-### Recommended Workflow
+## Configuration
 
-Following ML best practices, we maintain strict separation between training and test evaluation to prevent data leakage:
+### System Configuration (`config/system_config.yaml`)
 
-1. **Train models** using only training and validation sets (`src/train.py`)
-2. **Select best model** based on validation performance
-3. **Evaluate once** on test set using the separate evaluation script (`src/evaluate.py`)
+Defines OFDM system parameters:
+
+```yaml
+ofdm:
+  num_scs: 120      # Number of subcarriers
+  num_symbols: 14   # Number of OFDM symbols
+
+pilot:
+  num_scs: 40       # Number of pilot subcarriers
+  num_symbols: 2    # Number of pilot symbols
+```
+
+*Note:* Update these parameters to match your dataset. If there is a mismatch, you will get an error.
+
+### Model Configuration
+
+#### FortiTran (`config/fortitran.yaml`)
+
+```yaml
+model_type: 'fortitran'
+patch_size: [3, 2]            # Patch dimensions [height, width]
+num_layers: 6                 # Number of transformer layers
+model_dim: 32                 # Model dimension (embedding size)
+num_head: 4                   # Number of self-attention heads
+activation: 'gelu'            # Activation function in MLP blocks
+dropout: 0.1                  # Dropout rate
+max_seq_len: 512              # Maximum sequence length
+pos_encoding_type: 'learnable'  # Positional encoding type
+```
+
+#### AdaFortiTran (`config/adafortitran.yaml`)
+
+```yaml
+model_type: 'adafortitran'
+patch_size: [3, 2]            # Patch dimensions [height, width]
+num_layers: 6                 # Number of transformer layers
+model_dim: 32                 # Model dimension (embedding size)
+num_head: 4                   # Number of self-attention heads
+activation: 'gelu'            # Activation function in MLP blocks
+dropout: 0.1                  # Dropout rate
+max_seq_len: 512              # Maximum sequence length
+pos_encoding_type: 'learnable'  # Positional encoding type
+channel_adaptivity_hidden_sizes: [7, 42, 560]  # MLP hidden sizes for adaptation
+adaptive_token_length: 6      # Adaptive token vector length
+```
+
+## Training
 
 ### Sample Training Scripts
 
-*To train an AdaFortiTran model with default settings:*
+**Train AdaFortiTran with default settings:**
 
 ```bash
 python src/train.py \
@@ -60,7 +210,7 @@ python src/train.py \
     --exp_id my_experiment
 ```
 
-*To train an AdaFortiTran model with maximal configurability:*
+**Train with full configurability:**
 
 ```bash
 python src/train.py \
@@ -81,100 +231,6 @@ python src/train.py \
     --num_workers 8
 ```
 
-### Sample Evaluation Script
-
-*After training completes, evaluate the best model on the test set:*
-
-```bash
-python src/evaluate.py \
-    --checkpoint_path runs/adafortitran_my_experiment/best/checkpoint_epoch_50.pt \
-    --test_set data/test \
-    --batch_size 128 \
-    --output_dir results/final_evaluation
-```
-
-## Project Structure
-```
-AdaFortiTran/
-├── config/                    # Configuration files
-│   ├── system_config.yaml     # configurable OFDM system parameters
-│   ├── adafortitran.yaml      # default AdaFortiTran model config
-│   └── fortitran.yaml         # default FortiTran model config
-├── data/                      # Dataset directory
-│   ├── train/                 # Training data
-│   ├── val/                   # Validation data
-│   └── test/                  # Test data organized by evaluation scenarios (see below for more details on that)
-│       ├── DS_test_set/       # Delay Spread robustness tests (7 conditions)  
-│       ├── MDS_test_set/      # Max. Doppler Shift tests (7 conditions)
-│       └── SNR_test_set/      # Signal-to-Noise Ratio tests (7 conditions)
-├── scripts/                   # Utility scripts
-│   ├── add_gitkeep.py         # Add .gitkeep files to empty directories
-│   └── upload_to_huggingface.py  # Dataset upload utility
-├── src/                       # Source code
-│   ├── train.py               # Training script (main entry point)
-│   ├── evaluate.py            # Standalone test set evaluation script
-│   ├── main/                  # Training pipeline
-│   │   ├── trainer.py         # Unified model training
-│   │   └── parser.py          # Command-line argument parser
-│   ├── models/                # Model implementations
-│   │   ├── adafortitran.py    # AdaFortiTran model (extends FortiTran)
-│   │   ├── fortitran.py       # FortiTran model
-│   │   ├── linear.py          # Linear model
-│   │   └── blocks/            # Model building blocks
-│   │       ├── channel_adaptivity.py  # Channel adaptation mechanisms
-│   │       ├── encoders.py    # Transformer encoders
-│   │       ├── enhancers.py   # Feature enhancement modules
-│   │       ├── patch_processors.py    # Patch processing layers
-│   │       └── positional_encodings.py  # Positional encoding implementations
-│   ├── data/                  # Data loading
-│   │   └── dataset.py         # Data handling/processing
-│   ├── config/                # Configuration management
-│   │   ├── config_loader.py   # YAML configuration loader
-│   │   └── schemas.py         # Pydantic validation schemas
-│   └── utils.py               # Utility functions
-├── requirements.txt           # Python dependencies
-├── LICENSE                    # MIT License
-└── README.md                  # This file
-```
-
-## Configuration
-
-### System Configuration (`config/system_config.yaml`)
-
-Defines OFDM system parameters:
-
-```yaml
-ofdm:
-  num_scs: 120      # Number of subcarriers
-  num_symbols: 14   # Number of OFDM symbols
-
-pilot:
-  num_scs: 12       # Number of pilot subcarriers
-  num_symbols: 2    # Number of pilot symbols
-```
-
-*Note:* You should update those parameters based on your dataset.
-
-### Model Configuration (`config/adafortitran.yaml`)
-
-Defines the AdaFortiTran architecture parameters:
-
-```yaml
-model_type: 'adafortitran'            # should not be changed
-patch_size: [3, 2]                    # Patch dimensions
-num_layers: 6                         # number of transformer layers
-model_dim: 128                        # model dimension (i.e. dimension after the input projection is applied to each patch)
-num_head: 4                           # Number of self-attention heads
-activation: 'gelu'                    # Activation function (used within the MLP block of the transformer encoder)
-dropout: 0.1                          # Dropout rate (for MLP block of the transformer encoder)
-max_seq_len: 512                      # Maximum sequence length (should be >= number of patches)
-pos_encoding_type: 'learnable'        # Positional encoding type
-channel_adaptivity_hidden_sizes: [7, 42, 560]  # hidden sizes of the MLP used for adaptation to channel condition
-adaptive_token_length: 6              # Adaptive token vector (concatenated with each flattened patch) length
-```
-
-## Training Features
-
 ### Training Options
 
 | Feature | Description | Default |
@@ -193,6 +249,53 @@ adaptive_token_length: 6              # Adaptive token vector (concatenated with
 | `--pin_memory` | Pin memory for faster GPU transfer | True |
 | `--device` | Computing device (cpu, cuda, mps, auto) | auto |
 
+### Training Different Models
+
+**Linear Estimator:**
+```bash
+python src/train.py \
+    --model_name linear \
+    --system_config_path config/system_config.yaml \
+    --train_set data/train \
+    --val_set data/val \
+    --exp_id linear_baseline
+```
+
+**FortiTran:**
+```bash
+python src/train.py \
+    --model_name fortitran \
+    --system_config_path config/system_config.yaml \
+    --model_config_path config/fortitran.yaml \
+    --train_set data/train \
+    --val_set data/val \
+    --exp_id fortitran_experiment
+```
+
+**AdaFortiTran:**
+```bash
+python src/train.py \
+    --model_name adafortitran \
+    --system_config_path config/system_config.yaml \
+    --model_config_path config/adafortitran.yaml \
+    --train_set data/train \
+    --val_set data/val \
+    --exp_id adafortitran_experiment
+```
+
+### Resume Training
+
+```bash
+python src/train.py \
+    --model_name adafortitran \
+    --system_config_path config/system_config.yaml \
+    --model_config_path config/adafortitran.yaml \
+    --train_set data/train \
+    --val_set data/val \
+    --exp_id resumed_experiment \
+    --resume_from_checkpoint runs/adafortitran_experiment/best/checkpoint_epoch_50.pt
+```
+
 ### Callback System
 
 The training pipeline includes an extensible callback system:
@@ -207,6 +310,8 @@ The training pipeline includes an extensible callback system:
 
 ```
 data/
+├── sample_data/
+│   └── sample_files.zip     # Sample data for demos (1000 files)
 ├── train/
 │   ├── 1_SNR-20_DS-50_DOP-500_N-3_TDL-A.mat
 │   ├── 2_SNR-20_DS-50_DOP-500_N-3_TDL-A.mat
@@ -240,6 +345,7 @@ data/
         └── DOP_1400/         # 1400 Hz Doppler frequency
 ```
 
+**Note:**
 ### Test Set Organization
 
 Each test set evaluates model robustness under specific channel conditions:
@@ -264,57 +370,8 @@ Example: `1_SNR-20_DS-50_DOP-500_N-3_TDL-A.mat`
 ### Data Format
 
 Each `.mat` file must contain a variable `H` with shape `[# OFDM subcarriers, # OFDM symbols, 2]`:
-- `H[:, :, 0]`: complex valued ground truth channel matrix
-- `H[:, :, 1]`: least square estimate of the channel at pilot positions and zeros for non-pilot positions
-
-## Usage Examples
-
-### Training Different Models
-
-**Linear Estimator**:
-```bash
-python src/train.py \
-    --model_name linear \
-    --system_config_path config/system_config.yaml \
-    --train_set data/train \
-    --val_set data/val \
-    --exp_id linear_baseline
-```
-
-**FortiTran**:
-```bash
-python src/train.py \
-    --model_name fortitran \
-    --system_config_path config/system_config.yaml \
-    --model_config_path config/fortitran.yaml \
-    --train_set data/train \
-    --val_set data/val \
-    --exp_id fortitran_experiment
-```
-
-**AdaFortiTran**:
-```bash
-python src/train.py \
-    --model_name adafortitran \
-    --system_config_path config/system_config.yaml \
-    --model_config_path config/adafortitran.yaml \
-    --train_set data/train \
-    --val_set data/val \
-    --exp_id adafortitran_experiment
-```
-
-### Resume Training
-
-```bash
-python src/train.py \
-    --model_name adafortitran \
-    --system_config_path config/system_config.yaml \
-    --model_config_path config/adafortitran.yaml \
-    --train_set data/train \
-    --val_set data/val \
-    --exp_id resumed_experiment \
-    --resume_from_checkpoint runs/adafortitran_experiment/best/checkpoint_epoch_50.pt
-```
+- `H[:, :, 0]`: Complex-valued ground truth channel matrix
+- `H[:, :, 1]`: Least squares estimate of the channel at pilot positions (zeros for non-pilot positions)
 
 ## Monitoring and Logging
 
@@ -325,6 +382,8 @@ Training automatically logs metrics to TensorBoard:
 ```bash
 tensorboard --logdir runs/
 ```
+
+Then open http://localhost:6006 in your browser.
 
 Available metrics/logs:
 - Training/validation loss
@@ -339,9 +398,9 @@ Training logs are saved to:
 
 ## Testing and Evaluation
 
-### Evaluation Workflow
+### Evaluation Script
 
-After training completes, use the standalone evaluation script to assess your model on the test set:
+After training, evaluate your model on the test set:
 
 ```bash
 python src/evaluate.py \
