@@ -11,6 +11,11 @@
 **/.env.test.local/
 **/.env.production.local/
 
+logs/
+runs/
+
+**/__MACOSX/
+
 # Ignore data files but keep directory structure
 data/**/*.mat
 data/**/*.npy
