@@ -28,12 +28,12 @@ This repository implements three models:
 
    **Note:** This repository is tested for CUDA and CPU only.
 
-3. **Install dependencies**:
+3. **Install the package**:
    ```bash
-   pip install -r requirements.txt
+   pip install -e .
    ```
 
-   Dependencies include:
+   This installs the package in development mode with all dependencies:
    - `torch` - PyTorch deep learning framework
    - `pydantic` - Configuration validation
    - `pyyaml` - YAML configuration parsing
@@ -139,7 +139,8 @@ AdaFortiTran/
 │   └── config/                # Configuration management
 │       ├── config_loader.py   # YAML configuration loader
 │       └── schemas.py         # Pydantic validation schemas
-├── requirements.txt           # Python dependencies
+├── pyproject.toml             # Package configuration and dependencies
+├── requirements.txt           # Alternative dependency list
 ├── LICENSE                    # MIT License
 └── README.md                  # This file
 ```
