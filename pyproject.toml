@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "adafortitran"
+version = "1.0.0"
+description = "AdaFortiTran: Adaptive Transformer Model for Robust OFDM Channel Estimation"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.8"
+authors = [
+    {name = "Berkay Guler", email = "gulerb@uci.edu"}
+]
+keywords = ["deep learning", "OFDM", "channel estimation", "transformer", "wireless"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "torch",
+    "pydantic",
+    "pyyaml",
+    "scipy",
+    "tqdm",
+    "matplotlib",
+    "prettytable",
+    "tensorboard",
+]
+
+[project.scripts]
+adafortitran-train = "src.train:main"
+adafortitran-evaluate = "src.evaluate:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
