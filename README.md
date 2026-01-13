@@ -24,6 +24,7 @@ This repository implements three models:
    ```bash
    git clone https://github.com/your-username/AdaFortiTran.git
    cd AdaFortiTran
+   git lfs pull  # to pull the large files tracked by LFS (sample data)
    ```
 
 2. **Make sure to have CUDA properly installed**: If you have a CUDA-compatible GPU, you should install and configure the necessary drivers/kernels for accelerated computing on GPU(s). 
